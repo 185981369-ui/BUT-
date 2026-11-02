@@ -15,14 +15,16 @@ jobs:
           fetch-depth: 0
       - name: Fetch app
         run: |
-          mkdir -p site
-          curl -fsSL -A "curl/8.0" "https://butyoung-d0gccyj6k32b15fb1-1506892604.tcloudbaseapp.com/index.html" -o site/index.html
-          ls -l site/index.html
+          curl -fsSL -A "curl/8.0" "https://butyoung-d0gccyj6k32b15fb1-1506892604.tcloudbaseapp.com/index.html" -o index.html
+          ls -l index.html
       - name: Commit to app branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B app
-          git add site/index.html
-          git commit -m "store app build"
+          git rm -r site 2>/dev/null || true
+          rm -rf site
+          touch .nojekyll
+          git add -A
+          git commit -m "store app build" || true
           git push -f origin app
