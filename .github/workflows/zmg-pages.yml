@@ -7,59 +7,26 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-  pages: write
-  id-token: write
 concurrency:
   group: zmg-pages
   cancel-in-progress: true
 jobs:
-  deploy:
+  publish:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
-      - name: Probe Pages API
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Fetch r7 and publish to main root
         run: |
-          set +e
-          {
-            echo "== GET pages (before)"
-            gh api repos/${{ github.repository }}/pages 2>&1
-            echo "== POST pages"
-            gh api -X POST repos/${{ github.repository }}/pages -H "Accept: application/vnd.github+json" -f build_type=workflow 2>&1
-            echo "== PUT pages"
-            gh api -X PUT repos/${{ github.repository }}/pages -H "Accept: application/vnd.github+json" -f build_type=workflow 2>&1
-            echo "== GET pages (after)"
-            gh api repos/${{ github.repository }}/pages 2>&1
-          } > pages-api.txt
-          cat pages-api.txt
-          exit 0
-      - name: Commit Pages API proof
-        if: always()
-        run: |
+          set -e
+          curl -fsSL -A "curl/8.0" "https://butyoung-d0gccyj6k32b15fb1-1506892604.tcloudbaseapp.com/index.html" -o index.html
+          ls -l index.html
+          grep -o "2026.11.03-r7" index.html | head -1
+          touch .nojekyll
           git config user.name zmg-bot
           git config user.email zmg-bot@users.noreply.github.com
-          git add pages-api.txt
-          git commit -m "chore: record Pages API probe [skip ci]" || true
-          git push origin HEAD:main || true
-      - name: Fetch app
-        run: |
-          mkdir -p site
-          curl -fsSL -A "curl/8.0" "https://butyoung-d0gccyj6k32b15fb1-1506892604.tcloudbaseapp.com/index.html" -o site/index.html
-          ls -l site/index.html
-          grep -o "2026.11.03-r7" site/index.html | head -1
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          git add index.html .nojekyll
+          git commit -m "publish r7 to pages [skip ci]" || true
+          git push origin HEAD:main
