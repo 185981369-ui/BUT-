@@ -19,7 +19,12 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Enable Pages via API
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Probe Pages API
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -35,7 +40,9 @@ jobs:
             gh api repos/${{ github.repository }}/pages 2>&1
           } > pages-api.txt
           cat pages-api.txt
+          exit 0
       - name: Commit Pages API proof
+        if: always()
         run: |
           git config user.name zmg-bot
           git config user.email zmg-bot@users.noreply.github.com
