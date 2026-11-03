@@ -15,11 +15,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main
+      - name: Checkout gh-pages
         uses: actions/checkout@v4
         with:
-          ref: main
-      - name: Fetch r7 and publish to main root
+          ref: gh-pages
+      - name: Publish r7 to gh-pages root
         run: |
           set -e
           curl -fsSL -A "curl/8.0" "https://butyoung-d0gccyj6k32b15fb1-1506892604.tcloudbaseapp.com/index.html" -o index.html
@@ -29,13 +29,12 @@ jobs:
           git config user.name zmg-bot
           git config user.email zmg-bot@users.noreply.github.com
           git add index.html .nojekyll
-          git commit -m "publish r7 to pages [skip ci]" || true
-          git push origin HEAD:main
+          git commit -m "publish r7 to gh-pages [skip ci]" || true
+          git push origin HEAD:gh-pages
       - name: Request Pages build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          gh api -X POST repos/${{ github.repository }}/pages/builds -H "Accept: application/vnd.github+json" > pages-build.txt 2>&1
-          cat pages-build.txt
+          gh api -X POST repos/${{ github.repository }}/pages/builds -H "Accept: application/vnd.github+json"
           exit 0
