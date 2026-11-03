@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  pages: write
 concurrency:
   group: zmg-pages
   cancel-in-progress: true
@@ -30,3 +31,11 @@ jobs:
           git add index.html .nojekyll
           git commit -m "publish r7 to pages [skip ci]" || true
           git push origin HEAD:main
+      - name: Request Pages build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          gh api -X POST repos/${{ github.repository }}/pages/builds -H "Accept: application/vnd.github+json" > pages-build.txt 2>&1
+          cat pages-build.txt
+          exit 0
