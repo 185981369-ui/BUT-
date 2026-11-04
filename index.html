@@ -1416,7 +1416,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         </div>
         <div id="pvStatus" style="font-size:12px;color:#6b7a71;margin-top:10px">本机占用统计中…</div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
-          <input id="pvApiBase" type="url" placeholder="私有后端访问地址（CloudBase 函数 URL）" style="flex:1;min-width:180px;font-size:12px;padding:7px 10px;border:1px solid #d9ded9;border-radius:8px">
+          <input id="pvApiBase" type="url" placeholder="私有后端访问地址（服务端同步接口）" style="flex:1;min-width:180px;font-size:12px;padding:7px 10px;border:1px solid #d9ded9;border-radius:8px">
           <button type="button" id="pvApiSave" class="v-chip">保存地址</button>
         </div>
         <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
@@ -2835,7 +2835,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
 
   // ---- UI：数据与隐私卡片 / 老用户一次性提示 ----
   function modeDesc(m){
-    if(m==='private')return c.api.configured()?{t:'私有后端：'+c.api.base(),c:'#1d7a5c'}:{t:'私有后端已选择，但未填写访问地址，当前不会联网。',c:'#b07b12'};
+    if(m==='private')return c.api.configured()?{t:'私有后端已连接',c:'#1d7a5c'}:{t:'私有后端已选择，但未填写访问地址，当前不会联网。',c:'#b07b12'};
     return {t:'仅保存在本机，不发起任何网络请求。',c:'#1d7a5c'};
   }
   function refreshPrivacy(){
@@ -3001,7 +3001,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
     if(apiSave)apiSave.addEventListener('click',function(){
       c.sync.setApiBase(api?api.value:'');
       refreshPrivacy();
-      toastOk(c.api.configured()?'已保存后端地址：'+c.api.base():'已清空后端地址（不会联网）。');
+      toastOk(c.api.configured()?'已保存后端地址':'已清空后端地址（不会联网）。');
     });
     const up=document.getElementById('pvUpload');
     if(up)up.addEventListener('click',async function(){
@@ -3727,7 +3727,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
     const st=c.space.state();
     const base=c.api.base()||'';
     let html='<span style="color:'+(st.ok?'#1d7a5c':'#b07b12')+'">'+(st.ok?'● ':'○ ')+c.esc(st.t)+'</span>';
-    html+='<div style="margin-top:4px;word-break:break-all">私有后端地址：'+c.esc(base||'（未填）')+'</div>';
+    html+='<div style="margin-top:4px">私有后端：'+(base?'已连接':'未填写')+'</div>';
     const dev=c.space.devices?c.space.devices():0;
     if(st.ok&&dev>0)html+='<div style="margin-top:2px;color:#6b7a71">已连接设备 '+dev+' 台</div>';
     el.innerHTML=html;
@@ -4132,7 +4132,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.03-r8',at:'2026-11-03 09:10',tag:'r8'};
+  const BUILD={v:'2026.11.04-r9',at:'2026-11-04 12:13',tag:'r9'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -4166,37 +4166,77 @@ const ZMG=(window.ZMG=window.ZMG||{});
     }catch(e){}
     return false;
   }
-  // 没有 share 令牌且本机无归属证据：只显示一条提示，绝不给任何进入可编辑工作台的自助入口
-  function needEntryGate(){
+  // 根地址直接进工作台；只有本机完全没有身份与数据时，才弹一条可跳过的轻量连接提示
+  function pairHintSkipped(){
+    try{return sessionStorage.getItem('zmg_pair_hint_skip_v1')==='1';}catch(e){return false;}
+  }
+  function needPairHint(){
     try{
       if(c.guest&&c.guest.on)return false;
-      if(!isPublicHost())return false;
       if(c.sync.token())return false;
+      if(pairHintSkipped())return false;
       if(hasLocalRealData())return false;
       return true;
     }catch(e){return false;}
   }
-  function showLinkNotice(){
-    try{document.body.classList.add('zmg-gate-on');}catch(e){}
-    const ov=document.createElement('div');
-    ov.id='zmgLinkNotice';
-    ov.innerHTML='<div class="eg-card">'
-      +'<div class="eg-lock">🔗</div>'
-      +'<div class="eg-title">这条链接不完整</div>'
-      +'<div class="eg-sub">你打开的是站点地址，里面没有分享参数（<b>?share=…</b>），所以看不到对方的内容。<br><br>请向发送者索要<b>完整链接</b>（带 ?share= 的那一整条），直接点开即可。</div>'
-      +'<div class="eg-note">没有完整链接就无法查看。本页不会进入任何可编辑界面。</div>'
-      +'<div class="eg-ver">版本 '+BUILD.v+' · 构建 '+BUILD.at+'</div>'
-      +'</div>';
-    document.body.appendChild(ov);
+  function showPairBanner(){
+    try{
+      if(document.getElementById('zmgPairBanner'))return;
+      const bar=document.createElement('div');
+      bar.id='zmgPairBanner';
+      bar.style.cssText='position:fixed;left:10px;right:10px;bottom:84px;z-index:80;max-width:560px;margin:0 auto;box-sizing:border-box;background:#fff;border:1px solid #cfe0d6;border-radius:14px;box-shadow:0 10px 30px rgba(20,45,35,.18);padding:12px 14px';
+      bar.innerHTML='<div style="display:flex;align-items:flex-start;gap:8px">'
+        +'<div style="flex:1;min-width:0;font-size:12.5px;line-height:1.6;color:#4a5650"><b style="font-size:13px;color:#20302a">连接云端（可跳过）</b><br>粘贴 32 位恢复码可读取已有数据；不连接也能先在本机使用。</div>'
+        +'<button type="button" id="zmgPairLater" style="flex:0 0 auto;border:0;background:transparent;color:#6b7a71;font-size:12px;cursor:pointer;padding:2px 4px;min-height:28px">稍后</button>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+        +'<input id="zmgPairBannerCode" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="恢复码（可含空格/连字符）" style="flex:1 1 180px;min-width:0;box-sizing:border-box;font-size:16px;padding:10px 12px;border:1px solid #d9ded9;border-radius:10px;outline:none">'
+        +'<button type="button" id="zmgPairBannerGo" style="flex:0 0 92px;min-height:44px;border:0;border-radius:10px;background:#1d7a5c;color:#fff;font-size:14px;font-weight:700;cursor:pointer">连接</button>'
+        +'</div>'
+        +'<div id="zmgPairBannerMsg" role="status" style="display:none;margin-top:6px;font-size:12px;line-height:1.6;color:#c0392b"></div>';
+      document.body.appendChild(bar);
+      const inp=bar.querySelector('#zmgPairBannerCode'),go=bar.querySelector('#zmgPairBannerGo'),msg=bar.querySelector('#zmgPairBannerMsg');
+      function norm(){return String(inp.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+      bar.querySelector('#zmgPairLater').addEventListener('click',function(){
+        try{sessionStorage.setItem('zmg_pair_hint_skip_v1','1');}catch(e){}
+        try{bar.remove();}catch(e){}
+      });
+      go.addEventListener('click',async function(){
+        const code=norm();
+        msg.style.display='block';
+        if(code.length!==32){msg.style.color='#c0392b';msg.textContent='恢复码应为 32 位（当前 '+code.length+' 位）。';return;}
+        msg.style.color='#6b7a71';msg.textContent='连接中…';
+        go.disabled=true;go.textContent='连接中…';
+        try{
+          ensurePrivateMode();
+          let dev='网页版';
+          try{if(ZMG.space&&ZMG.space.devName)dev=ZMG.space.devName();}catch(e){}
+          const r=await ZMG.api.request('/v1/spaces/join',{method:'POST',timeout:20000,body:{recoveryCode:code,deviceName:dev}});
+          if(!r.ok){msg.style.color='#c0392b';msg.textContent=pairErrText(r);go.disabled=false;go.textContent='连接';return;}
+          ZMG.sync.setToken(r.deviceToken);
+          try{if(ZMG.space&&ZMG.space.setId)ZMG.space.setId(r.spaceId||'');}catch(e){}
+          try{if(ZMG.sync.setMode)ZMG.sync.setMode('private');}catch(e){}
+          try{if(ZMG.spaceUI&&ZMG.spaceUI.refresh)ZMG.spaceUI.refresh();}catch(e){}
+          try{await rtPullMerge({full:true});}catch(e){}
+          try{refreshSpace();refreshAuto();loadShares();}catch(e){}
+          try{bar.remove();}catch(e){}
+          toastOk('已连接云端');
+        }catch(e){
+          msg.style.color='#c0392b';msg.textContent='连接失败：'+(e&&e.message?e.message:'网络不通');
+          go.disabled=false;go.textContent='连接';
+        }
+      });
+      inp.addEventListener('keydown',function(ev){if(ev&&ev.key==='Enter'){ev.preventDefault();go.click();}});
+    }catch(e){}
   }
 
   function init(){
     // 分享了链接优先：访客模式不注入编辑入口、不读本机数据，直接进只读视图
     const token=c.share.tokenFromUrl();
     if(token){c.guest.start(token);return;}
-    // 地址栏直接打开站点（无 share）且本机没有任何归属证据 → 只显示提示，不进可编辑台账
-    if(needEntryGate()){showLinkNotice();return;}
+    // 根地址直接进入可编辑工作台，不再整页拦截
     bootOwner();
+    if(needPairHint())showPairBanner();
   }
   c.share.init=init;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
@@ -5220,7 +5260,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     try{
       const sel=document.getElementById('pvModeSel');if(sel)sel.value=ZMG.sync.mode();
       const d=document.getElementById('pvModeDesc');
-      if(d&&ZMG.sync.mode()==='private'){d.textContent='私有后端：'+ZMG.api.base();d.style.color='#1d7a5c';}
+      if(d&&ZMG.sync.mode()==='private'){d.textContent='私有后端已连接';d.style.color='#1d7a5c';}
     }catch(e){}
   }
   function ensurePrivateMode(){
