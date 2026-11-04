@@ -3099,7 +3099,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
    原则：
    1) 权限判定全部在云函数侧（deviceToken 管写、shareToken 管读/授权写），前端只做展示；
    2) 分享视图只读渲染，不写本地 localStorage，不影响本机工作台；
-   3) 项目密码不再以明文落本地：优先加密存云函数，其次本机 AES-GCM 密封，都没有则拒绝保存。 */
+   3) 项目密码（门禁/门锁）按原始文本保存与展示，不加密、不掩码；系统凭证仍按原逻辑保护。 */
 (function(c){
   const K={space:'zmg_space_id_v1',auto:'zmg_autoexport_v1',note:'zmg_pwd_note_v1',lk:'zmg_local_seal_key_v1',guide:'zmg_backup_guide_v1'};
 
@@ -3553,26 +3553,18 @@ const ZMG=(window.ZMG=window.ZMG||{});
     }
   };
 
-  // ------------------------------------------------ 项目密码：云加密 / 本机密封
+  // ------------------------------------------------ 项目密码：明文保存与展示（r10）
+  // 业务密码（门禁/门锁）按原始文本存本机与云端，卡片直接显示明文；不加密、不掩码。
+  // 仅保留对旧版加密数据（pwdSec）的一次性解密能力，用于迁移为明文。
   c.secrets={
     sealed:function(p){return !!(p&&p.pwdSec&&p.pwdSec.store);},
     legacy:function(p){return !!(p&&typeof p.pwd==='string'&&p.pwd);},
     cardLine:function(p,i){
-      if(c.secrets.legacy(p))return '<div class="wb-proj-line">密码：•••••• <span style="color:#b07b12;font-size:11px">旧版明文</span></div>';
-      if(c.secrets.sealed(p))return '<div class="wb-proj-line">密码：•••••• <button type="button" class="wb-proj-reveal" data-pwd="'+i+'" style="border:none;background:transparent;color:#1d7a5c;font-size:12px;padding:0 2px;cursor:pointer">查看</button></div>';
+      if(c.secrets.legacy(p))return '<div class="wb-proj-line">密码：'+c.esc(p.pwd)+'</div>';
+      if(c.secrets.sealed(p))return '<div class="wb-proj-line">密码：<span style="color:#b07b12;font-size:11px">旧加密数据，修改项目时重新输入即可转为明文</span></div>';
       return '';
     },
-    bindCard:function(card,p,i){
-      const b=card&&card.querySelector?card.querySelector('[data-pwd]'):null;
-      if(!b)return;
-      b.addEventListener('click',function(ev){
-        ev.stopPropagation();
-        c.secrets.reveal(p).then(function(v){
-          if(v)toastOk('密码：'+v);
-          else toastOk('查看失败：'+(c.secrets.lastErr||'无法解密（可能不属于当前空间）'));
-        });
-      });
-    },
+    bindCard:function(){},
     lastErr:'',
     localKey:async function(){
       let raw=g(K.lk);
@@ -3582,15 +3574,6 @@ const ZMG=(window.ZMG=window.ZMG||{});
       }
       return crypto.subtle.importKey('raw',unb64(raw),{name:'AES-GCM'},false,['encrypt','decrypt']);
     },
-    localSeal:async function(value){
-      if(!(window.crypto&&crypto.subtle))return {ok:false,message:'当前环境不支持本地加密（需 https / localhost），请先启用私有后端'};
-      try{
-        const key=await c.secrets.localKey();
-        const iv=new Uint8Array(12);crypto.getRandomValues(iv);
-        const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,new TextEncoder().encode(value));
-        return {ok:true,meta:{store:'local',iv:b64(iv),ct:b64(ct)}};
-      }catch(e){return {ok:false,message:'本地加密失败'};}
-    },
     localOpen:async function(meta){
       if(!(window.crypto&&crypto.subtle))return null;
       try{
@@ -3598,17 +3581,6 @@ const ZMG=(window.ZMG=window.ZMG||{});
         const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(meta.iv)},key,unb64(meta.ct));
         return new TextDecoder().decode(pt);
       }catch(e){return null;}
-    },
-    seal:async function(value,proj){
-      const uid=(proj&&proj.uid)||c.uuid();
-      if(c.sync.token()&&c.api.configured()){
-        const r=await c.api.request('/v1/secrets/'+encodeURIComponent('proj:'+uid),{method:'POST',timeout:15000,body:{value:value}});
-        if(r.ok)return {ok:true,uid:uid,meta:{store:'cloud',key:'proj:'+uid}};
-        c.secrets.lastErr=r.message||r.code;
-      }
-      const local=await c.secrets.localSeal(value);
-      if(local.ok)return {ok:true,uid:uid,meta:local.meta};
-      return {ok:false,message:local.message||'无法安全保存密码'};
     },
     reveal:async function(p){
       c.secrets.lastErr='';
@@ -3623,20 +3595,18 @@ const ZMG=(window.ZMG=window.ZMG||{});
       }
       return c.secrets.localOpen(meta);
     },
-    // 旧明文迁移：上传后删除 pwd 字段（本地只保留 {store,key} 引用）
-    migrate:async function(projects){
-      let moved=0,failed=0;
-      for(const p of projects){
-        if(!c.secrets.legacy(p))continue;
-        const value=String(p.pwd);
-        const r=await c.secrets.seal(value,p);
-        if(r.ok){p.uid=r.uid;p.pwdSec=r.meta;delete p.pwd;moved++;}
-        else failed++;
+    // 旧加密数据一次性解密为明文：成功则写入 p.pwd 并删除 pwdSec
+    openAll:async function(projects){
+      let changed=0;
+      for(const p of projects||[]){
+        if(!p||typeof p!=='object')continue;
+        if(!c.secrets.sealed(p)||c.secrets.legacy(p))continue;
+        const v=await c.secrets.reveal(p);
+        if(typeof v==='string'&&v){p.pwd=v;delete p.pwdSec;delete p.uid;changed++;}
       }
-      if(moved)c.projects.save(projects);
-      return {moved:moved,failed:failed};
-    },
-    count:function(projects){return (projects||[]).filter(function(p){return c.secrets.legacy(p);}).length;}
+      if(changed)c.projects.save(projects);
+      return changed;
+    }
   };
 
   // ------------------------------------------------ 月度自动导出（页面开着才生效）
@@ -4071,33 +4041,6 @@ const ZMG=(window.ZMG=window.ZMG||{});
     sp('aeNow',async function(){const st=await c.exportData();if(st)refreshAuto();});
   }
 
-  // 旧明文密码一次性迁移提示（迁移后本地只留 {store,key} 引用）
-  function pwdPrompt(){
-    let list=[];
-    try{list=loadProjects();}catch(e){return;}
-    const n=c.secrets.count(list);
-    if(!n||g(K.note)==='done')return;
-    const ov=document.createElement('div');
-    ov.className='vd-overlay';ZMG.dialog(ov);
-    ov.innerHTML='<div class="vd-box" style="max-width:400px;padding:18px">'
-      +'<div style="font-weight:700;font-size:15px;margin-bottom:8px">检测到 '+n+' 个项目的明文密码</div>'
-      +'<div style="font-size:12.5px;line-height:1.75;color:#4a5650">旧版本把门禁密码以<b>明文</b>存在本机浏览器，还显示在项目卡片上。建议立即加密：有私有后端时存云端（本地只留引用），否则用本机 AES-GCM 密封。</div>'
-      +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
-      +'<button type="button" class="v-chip on" id="pwGo" style="flex:1">立即加密迁移</button>'
-      +'<button type="button" class="v-chip" id="pwLater" style="flex:1">稍后（仍保持明文）</button>'
-      +'</div></div>';
-    document.body.appendChild(ov);
-    ov.querySelector('#pwLater').addEventListener('click',function(){ov.remove();});
-    ov.querySelector('#pwGo').addEventListener('click',async function(){
-      const btn=ov.querySelector('#pwGo');btn.disabled=true;btn.textContent='迁移中…';
-      const r=await c.secrets.migrate(list);
-      s(K.note,'done');
-      ov.remove();
-      toastOk('已加密 '+r.moved+' 个'+(r.failed?('，失败 '+r.failed+' 个（可重试）'):'')+'。');
-      try{renderProjCards();}catch(e){}
-    });
-  }
-
   // 任务E：首次备份引导（只弹一次；说明「自动导出 + 定时任务搬去 NAS」）
   function backupGuide(){
     if(g(K.guide)==='1')return;
@@ -4132,11 +4075,12 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.04-r9',at:'2026-11-04 12:13',tag:'r9'};
+  const BUILD={v:'2026.11.04-r10',at:'2026-11-04 15:04',tag:'r10'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
-    inject();refreshSpace();refreshAuto();loadShares();pwdPrompt();
+    inject();refreshSpace();refreshAuto();loadShares();
+    try{const _pp=loadProjects();ZMG.secrets.openAll(_pp).then(function(n){if(n){renderTopSub();renderProjCards();}});}catch(e){}
     backupGuide();
     setTimeout(function(){c.autoExport.tick();},4000);
     setInterval(function(){c.autoExport.tick();},60000);
@@ -5566,7 +5510,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
       +'<label style="'+LBL+'">深化时间</label>'
       +'<div style="display:flex;gap:8px;margin-top:6px;align-items:center"><input id="pjSStart" type="date" style="'+IN+'" value="'+escH(p.sStart||'')+'"><span style="color:#a9b2aa;flex:none">至</span><input id="pjSEnd" type="date" style="'+IN+'" value="'+escH(p.sEnd||'')+'"></div>'
       +'<label style="'+LBL+'">备注<textarea id="pjNote" rows="2" style="'+IN+';resize:none;min-height:60px" placeholder="项目备注（可选）">'+escH(p.note||'')+'</textarea></label>'
-      +'<label style="'+LBL+'">密码（门禁/门锁）'+(ZMG.secrets&&ZMG.secrets.sealed(p)?'<span style="font-weight:400;color:#1d7a5c;margin-left:6px">已加密保存，留空不修改</span>':'')+'<input id="pjPwd" type="password" autocomplete="new-password" style="'+IN+'" placeholder="'+(p.pwd?'旧版明文密码，重新输入即可加密迁移':'如：门禁密码 123456')+'" value=""></label>'
+      +'<label style="'+LBL+'">密码（门禁/门锁）<input id="pjPwd" type="text" autocomplete="off" style="'+IN+'" placeholder="如：门禁密码 123456" value="'+escH(p.pwd||'')+'"></label>'
       +'<label style="'+LBL+'">是否需要报备车牌号<select id="pjPlate" style="'+IN+'"><option value="需要"'+(p.plate==='需要'?' selected':'')+'>需要</option><option value="不需要"'+(p.plate!=='需要'?' selected':'')+'>不需要</option></select></label>'
       +'<div style="display:flex;gap:10px;margin-top:16px">'
       +'<button type="button" id="pjSave" class="v-chip on" style="flex:1">保存</button>'
@@ -5579,17 +5523,11 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     document.body.appendChild(ov);
     ov.querySelector('.vd-close').addEventListener('click',()=>ov.remove());
     ov.querySelector('#pjSave').addEventListener('click',async()=>{
-      const pwdRaw=ov.querySelector('#pjPwd').value.trim();
-      const oldPwd=(editing&&typeof a[idx].pwd==='string')?String(a[idx].pwd):'';
+      const pwdRaw=ov.querySelector('#pjPwd').value;
       const np={comm:ov.querySelector('#pjComm').value.trim(),unit:ov.querySelector('#pjUnit').value.trim(),geo:ov.querySelector('#pjGeo').value.trim(),floors:parseInt(ov.querySelector('#pjFloors').value,10)||'',designer:ov.querySelector('#pjDesigner').value.trim(),builder:ov.querySelector('#pjBuilder').value.trim(),dStart:ov.querySelector('#pjDStart').value,dEnd:ov.querySelector('#pjDEnd').value,sStart:ov.querySelector('#pjSStart').value,sEnd:ov.querySelector('#pjSEnd').value,note:ov.querySelector('#pjNote').value.trim(),plate:ov.querySelector('#pjPlate').value};
-      if(editing&&a[idx].uid)np.uid=a[idx].uid;
-      if(editing&&a[idx].pwdSec)np.pwdSec=a[idx].pwdSec;
-      const sealRaw=pwdRaw||oldPwd;
-      if(sealRaw){
-        const r=await ZMG.secrets.seal(sealRaw,editing?a[idx]:np);
-        if(!r.ok){toast('密码保存失败：'+(r.message||'无法安全保存，请到「数据与隐私」启用私有后端'));return;}
-        np.uid=r.uid;np.pwdSec=r.meta;
-      }
+      // 业务密码按原始文本保存，不加密、不掩码
+      if(pwdRaw)np.pwd=pwdRaw;
+      else if(editing&&a[idx].pwdSec&&!(typeof a[idx].pwd==='string'&&a[idx].pwd))np.pwdSec=a[idx].pwdSec;
       if(editing)a[idx]=np;else a.push(np);
       saveProjects(a);renderTopSub();renderProjCards();toast('项目已保存。');ov.remove();
     });
