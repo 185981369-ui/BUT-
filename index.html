@@ -1188,7 +1188,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <div class="wb-proj" id="wbProj"></div>
         <div class="wb-list-title">最近待办</div>
         <div class="wb-recent" id="wbRecent"></div>
-        <div class="wb-foot"><span>数据与「素材」页同步</span><span class="wb-sync-btns"><button type="button" id="syncUpBtn" class="v-chip" title="把本机真实数据上传到你的私有云端">↑ 上传到云端</button><button type="button" id="syncDownBtn" class="v-chip" title="从你的私有云端拉取并按 LWW 合并，不会整包覆盖本机">↓ 从云端下载</button></span></div>
+        <div class="wb-foot"><span>数据与「现场待办」页同步</span><span class="wb-sync-btns"><button type="button" id="syncUpBtn" class="v-chip" title="把本机真实数据上传到你的私有云端">↑ 上传到云端</button><button type="button" id="syncDownBtn" class="v-chip" title="从你的私有云端拉取并按 LWW 合并，不会整包覆盖本机">↓ 从云端下载</button></span></div>
       </div>
       <div class="home-demo" hidden>
       <div class="section-head"><h2>进行中的项目</h2><span class="hint" id="projHint">搜索并选择当前项目</span></div>
@@ -1402,7 +1402,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="card" style="padding:8px 14px">
         <div id="meDesignSteps" style="display:flex;flex-direction:column;gap:2px"></div>
       </div>
-      <div class="section-head" style="margin-top:16px"><h2>数据与隐私</h2></div>
+      <div style="font-size:12px;color:#a9b2ab;text-align:center;margin-top:22px">BUT 工作管理平台<br>数据只在本机与你的私有云端</div>
+    </section>
+
+    <!-- ===== 视图：系统 ===== -->
+    <section class="view" id="view-system">
+      <div class="section-head"><h2>系统</h2></div>
       <div class="card" style="padding:14px" id="privacyCard">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:180px">
@@ -1442,8 +1447,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="tab on" data-view="home"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10l8-6 8 6v10a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg><span>首页</span></button>
     <button class="tab" data-view="progress"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>进度</span></button>
     <button class="tab" data-view="material"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h16M6 16h12l-2-8H8z"/><path d="M8 8h8l1-3H7z"/></svg><span>选材</span></button>
-    <button class="tab" data-view="onsite"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg><span>素材</span></button>
-    <button class="tab" data-view="me"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-3 4-4 8-4s7 1 8 4"/></svg><span>我的</span></button>
+    <button class="tab" data-view="onsite"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg><span>现场待办</span></button>
+    <button class="tab" data-view="me"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-3 4-4 8-4s7 1 8 4"/></svg><span>设计待办</span></button>
+    <button class="tab" data-view="system"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 14.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2.06 2.06 0 1 1-2.91 2.91l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2.06 2.06 0 1 1-4.12 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2.06 2.06 0 1 1-2.91-2.91l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1H3a2.06 2.06 0 1 1 0-4.12h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2.06 2.06 0 1 1 2.91-2.91l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.56V3a2.06 2.06 0 1 1 4.12 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2.06 2.06 0 1 1 2.91 2.91l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.56 1H21a2.06 2.06 0 1 1 0 4.12h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg><span>系统</span></button>
   </nav>
 </div>
 <div id="viewmask" aria-hidden="true"></div>
@@ -3371,7 +3377,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
       if(has('remark')&&t.remark)body+=line('备注',String(t.remark));
       if(has('note'))body+=(t.note?line('补充描述',String(t.note)):empty('补充描述','（这条没有额外说明，以上为全部内容）'));
       if(has('photos')&&imgs.length)body+='<div style="margin-top:12px;display:grid;gap:8px">'+imgs.map(function(u){
-        return '<img src="'+c.esc(u)+'" alt="素材照片" style="width:100%;max-height:300px;object-fit:cover;border-radius:10px;display:block">';
+        return '<img src="'+c.esc(u)+'" alt="现场照片" style="width:100%;max-height:300px;object-fit:cover;border-radius:10px;display:block">';
       }).join('')+'</div>';
       if(atts.length)body+=line('附件',atts.map(function(a){return (a&&a.name)||'文件';}).join('、'));
       if(!body)body='<div style="margin-top:14px;font-size:14px;color:#8a968f">作者只开放了标题，没有其他可见字段。</div>';
@@ -3468,13 +3474,13 @@ const ZMG=(window.ZMG=window.ZMG||{});
         var onCards=d.todos.map(function(t,i){
           var imgs=c.guest.pics(t);if(!imgs.length)return '';
           var parts='<div class="gs-imgs" style="display:grid;gap:8px;margin-top:10px">'+imgs.map(function(u,j){
-            return '<img class="gs-img" data-g="'+i+'" data-j="'+j+'" src="'+c.esc(u)+'" alt="素材照片" style="width:100%;max-width:100%;max-height:260px;object-fit:cover;border-radius:10px;cursor:'+(sc.allowOriginal?'zoom-in':'default')+';display:block">';
+            return '<img class="gs-img" data-g="'+i+'" data-j="'+j+'" src="'+c.esc(u)+'" alt="现场照片" style="width:100%;max-width:100%;max-height:260px;object-fit:cover;border-radius:10px;cursor:'+(sc.allowOriginal?'zoom-in':'default')+';display:block">';
           }).join('')+'</div>';
           return cardHtml(i,t,parts);
         }).join('');
-        if(onCards)secs.push(secHtml('onsite','④ 素材','',onCards));
+        if(onCards)secs.push(secHtml('onsite','④ 现场待办','',onCards));
       }
-      // ⑤ 我的（备注 / 附件）
+      // ⑤ 设计待办（备注 / 附件）
       if(has('remark')||sc.allowFiles){
         var myCards=d.todos.map(function(t,i){
           var parts='',any=false;
@@ -3482,7 +3488,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
           if(sc.allowFiles&&Array.isArray(t.attachments)&&t.attachments.length){any=true;parts+='<div class="gs-meta" style="font-size:13px;color:#6b7a71;margin-top:6px">附件：'+t.attachments.map(function(a){return c.esc((a&&a.name)||'文件');}).join('、')+'</div>';}
           return any?cardHtml(i,t,parts):'';
         }).join('');
-        if(myCards)secs.push(secHtml('mine','⑤ 我的','',myCards));
+        if(myCards)secs.push(secHtml('mine','⑤ 设计待办','',myCards));
       }
       const rows=secs.join('');
       ov.innerHTML='<div style="max-width:760px;margin:0 auto;box-sizing:border-box">'
@@ -3745,7 +3751,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   // ---------------- 只读分享：可见范围勾选面板（项目/楼层/房间/状态/字段/开关） ----------------
   const SCOPE_FIELDS=[
     ['title','标题',true],['custom','说明/描述',true],['status','状态',true],['date','日期',true],['note','问题描述',true],
-    ['photos','素材照片',false],['vendors','供应商/工种',false],['materials','材料清单',false],
+    ['photos','现场照片',false],['vendors','供应商/工种',false],['materials','材料清单',false],
     ['amount','金额',false],['remark','备注',false],['stage','施工阶段',false]
   ];
   // 五模块分组（顺序与左侧主导航一致）：勾选结果仍只落在服务端已有 scope 键上
@@ -3753,8 +3759,8 @@ const ZMG=(window.ZMG=window.ZMG||{});
     {k:'home',t:'① 首页（概览）',d:'访客第一屏：项目名与统计'},
     {k:'progress',t:'② 进度',d:'每条进度卡片的文字内容'},
     {k:'material',t:'③ 选材',d:'供应商、材料与金额'},
-    {k:'onsite',t:'④ 素材',d:'素材照片与大图原图'},
-    {k:'mine',t:'⑤ 我的',d:'备注与附件（PDF/图纸）'}
+    {k:'onsite',t:'④ 现场待办',d:'现场照片与大图原图'},
+    {k:'mine',t:'⑤ 设计待办',d:'备注与附件（PDF/图纸）'}
   ];
   const MOD_FIELDS={progress:['title','custom','status','date','note','stage'],material:['vendors','materials','amount'],onsite:['photos'],mine:['remark']};
   // 权限摘要：把 scope 翻成人话，生成前后都用同一份，保证「所见即所得」
@@ -3853,7 +3859,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
           return spCardHtml({grp:'fields',val:k,title:f[1],desc:{vendors:'供应商 / 工种',materials:'材料清单',amount:'金额'}[k]||'',on:f[2]});
         }).join(''),true)
       +spModHtml(SCOPE_MODULES[3],
-          spCardHtml({grp:'fields',val:'photos',title:'素材照片',desc:'缩略图（未开放原图）',on:false})
+          spCardHtml({grp:'fields',val:'photos',title:'现场照片',desc:'缩略图（未开放原图）',on:false})
           +spCardHtml({bool:'orig',id:'spOrig',title:'允许看大图原图',desc:'双指放大 / 全屏查看',on:false}),true)
       +spModHtml(SCOPE_MODULES[4],
           spCardHtml({grp:'fields',val:'remark',title:'备注',desc:'每条备注文字',on:false})
@@ -4075,7 +4081,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.04-r10',at:'2026-11-04 15:04',tag:'r10'};
+  const BUILD={v:'2026.11.04-r11',at:'2026-11-04 17:30',tag:'r11'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -6434,7 +6440,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
           }else if(draft.pnotes&&draft.pnotes.length){
             draft.pnotes[draft.pnotes.length-1].imgs.push(rd.result); // 没点过就进最后一张
           }else{
-            toast('还没有素材记录卡片，先点"+ 增加图文"建一张');return;
+            toast('还没有现场记录卡片，先点"+ 增加图文"建一张');return;
           }
           renderImgs();renderPNotes();
         };
