@@ -2854,7 +2854,9 @@ const ZMG=(window.ZMG=window.ZMG||{});
     const st=document.getElementById('pvStatus');
     if(st){
       const q=c.api.outboxSize();
-      st.textContent='本机占用约 '+c.sync.usageText()+' · 待上传队列 '+(c.sync.netAllowed()?(q+' 条'):'不适用（同步已关闭）');
+      let use='0 KB';
+      try{use=c.sync.usageText();}catch(e){}
+      st.textContent='本机占用约 '+use+' · 待上传队列 '+(c.sync.netAllowed()?(q+' 条'):'不适用（同步已关闭）');
     }
     const api=document.getElementById('pvApiBase');
     if(api&&document.activeElement!==api)api.value=c.sync.apiBase();
@@ -2874,6 +2876,30 @@ const ZMG=(window.ZMG=window.ZMG||{});
     else{const ub=document.getElementById('pvUsageBox');if(ub)ub.style.display='none';}
   }
   function toastOk(msg){try{if(typeof ZMG.toast==='function'){ZMG.toast(msg);return;}toast(msg);}catch(e){console.log('[privacy]',msg);}}
+  function pvLine(txt,color){const box=document.getElementById('pvSyncResult');if(box){box.textContent=txt;box.style.color=color||'#6b7a71';}}
+  // 上传/下载统一入口：点击立即反馈、执行中禁用、成功失败都有结果
+  async function runDownload(btn){
+    const R=ZMG.runtime;
+    if(!R||typeof R.download!=='function'){pvLine('下载接口未就绪，请刷新页面后重试。','#c0392b');toastOk('下载接口未就绪：请刷新页面后重试。');return;}
+    btn.disabled=true;btn.style.opacity='.7';
+    pvLine(c.sync.token()?'正在从云端下载…':'尚未配对：请在弹窗中粘贴 32 位恢复码，完成后会自动下载。','#6b7a71');
+    try{
+      const r=await R.download();
+      if(r&&!r.ok){const m=(r&&(r.message||r.code))||'已取消';if(typeof setSyncResult==='function')setSyncResult({kind:'down',ok:false,msg:m});else pvLine('下载未完成：'+m,'#c0392b');}
+    }catch(e){const m=(e&&e.message)||'未知错误';pvLine('下载失败：'+m,'#c0392b');toastOk('下载失败：'+m);}
+    finally{btn.disabled=false;btn.style.opacity='1';try{refreshPrivacy();}catch(e){}}
+  }
+  async function runUpload(btn){
+    const R=ZMG.runtime;
+    if(!R||typeof R.uploadUser!=='function'){pvLine('上传接口未就绪，请刷新页面后重试。','#c0392b');toastOk('上传接口未就绪：请刷新页面后重试。');return;}
+    btn.disabled=true;btn.style.opacity='.7';
+    pvLine(c.sync.token()?'正在上传到云端…':'尚未配对：请在弹窗中粘贴 32 位恢复码，完成后会自动上传。','#6b7a71');
+    try{
+      const r=await R.uploadUser();
+      if(r&&!r.ok){const m=(r&&(r.message||r.code))||'已取消';if(typeof setSyncResult==='function')setSyncResult({kind:'up',ok:false,msg:m});else pvLine('上传未完成：'+m,'#c0392b');}
+    }catch(e){const m=(e&&e.message)||'未知错误';pvLine('上传失败：'+m,'#c0392b');toastOk('上传失败：'+m);}
+    finally{btn.disabled=false;btn.style.opacity='1';try{refreshPrivacy();}catch(e){}}
+  }
 
   // ---- 任务B：同步结果行（条数 / 字节 / 时间），页面可见、刷新后仍在 ----
   function fmtHM(ts){
@@ -2994,6 +3020,8 @@ const ZMG=(window.ZMG=window.ZMG||{});
   try{c.sync.renderUsage=loadUsage;c.sync.renderResult=renderSyncResult;}catch(e){}
 
   function bindPrivacy(){
+    if(bindPrivacy.done)return;
+    bindPrivacy.done=true;
     const sel=document.getElementById('pvModeSel');
     if(sel)sel.addEventListener('change',function(){
       const next=sel.value;
@@ -3009,24 +3037,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
       refreshPrivacy();
       toastOk(c.api.configured()?'已保存后端地址':'已清空后端地址（不会联网）。');
     });
-    const up=document.getElementById('pvUpload');
-    if(up)up.addEventListener('click',async function(){
-      const R=ZMG.runtime;
-      if(!R||typeof R.uploadUser!=='function'){toastOk('上传接口未就绪：请刷新页面后重试。');return;}
-      up.disabled=true;
-      try{await R.uploadUser();}
-      catch(e){toastOk('上传失败：'+(e&&e.message));}
-      finally{up.disabled=false;refreshPrivacy();}
-    });
-    const pl=document.getElementById('pvPull');
-    if(pl)pl.addEventListener('click',async function(){
-      const R=ZMG.runtime;
-      if(!R||typeof R.download!=='function'){toastOk('下载接口未就绪：请刷新页面后重试。');return;}
-      pl.disabled=true;
-      try{await R.download();}
-      catch(e){toastOk('下载失败：'+(e&&e.message));}
-      finally{pl.disabled=false;refreshPrivacy();}
-    });
+    // 上传/下载由模块加载时注册的事件委托接管（见本段末尾），卡片搬家后依然生效
     const dl=document.getElementById('pvDelete');
     if(dl)dl.addEventListener('click',async function(){
       if(!c.api.configured()||!c.sync.token()){toastOk('还没有连接私有云端，没有可删除的副本。');return;}
@@ -3096,8 +3107,26 @@ const ZMG=(window.ZMG=window.ZMG||{});
   function init(){
     bindPrivacy();
     refreshPrivacy();
+    // 卡片若尚未进入 DOM（页面重渲染/延迟插入），补一次重试，保证占用统计与按钮可用
+    if(!document.getElementById('pvUpload')){
+      let n=0;
+      const t=setInterval(function(){
+        if(document.getElementById('pvUpload')||n++>20){
+          clearInterval(t);bindPrivacy();refreshPrivacy();
+        }
+      },100);
+    }
   }
   c.sync.init=init;
+  c.sync.refreshUI=refreshPrivacy;
+  // 上传/下载：模块加载即绑定委托，不依赖 DOMContentLoaded 与卡片所在页面
+  document.addEventListener('click',function(ev){
+    const t=ev.target&&ev.target.closest?ev.target.closest('#pvUpload,#pvPull'):null;
+    if(!t)return;
+    ev.preventDefault();
+    if(t.disabled)return;
+    if(t.id==='pvUpload')runUpload(t);else runDownload(t);
+  },true);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
   else setTimeout(init,0);
 })(window.ZMG);
@@ -4081,7 +4110,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.04-r11',at:'2026-11-04 17:30',tag:'r11'};
+  const BUILD={v:'2026.11.04-r12',at:'2026-11-04 20:20',tag:'r12'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -4599,6 +4628,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
       document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
       $('#view-'+view).classList.add('active');
       tabs.forEach(t=>t.classList.toggle('on',t===tab));
+      try{if(view==='system'&&window.ZMG&&ZMG.sync&&typeof ZMG.sync.refreshUI==='function')ZMG.sync.refreshUI();}catch(e){}
       try{if(window.__onView)window.__onView(view);}catch(e){}
       // 动画
       requestAnimationFrame(()=>requestAnimationFrame(()=>ripple.style.transition='transform .46s var(--ease),opacity .5s var(--ease) .1s'));
@@ -5198,7 +5228,13 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
 
   // ---- 云同步（私有账本）：上传/下载只走 zmg-sync /v1/sync ----
   // 旧版公共 KV（mantledb.sh）整包快照链路已彻底移除，不存在「私有失败就回落旧链路」的分支。
-  function setSync(txt,bad){const el=document.getElementById('syncState');if(!el)return;el.style.display='inline';el.textContent=txt;el.style.color=bad?'#c0392b':'#1d7a5c';}
+  function setSync(txt,bad){
+    const el=document.getElementById('syncState');
+    if(el){el.style.display='inline';el.textContent=txt;el.style.color=bad?'#c0392b':'#1d7a5c';return;}
+    // 「数据与隐私」搬到系统页后 #syncState 不在当前页，进度直接写到结果行，避免静默
+    const pv=document.getElementById('pvSyncResult');
+    if(pv){pv.textContent=txt;pv.style.color=bad?'#c0392b':'#1d7a5c';}
+  }
   function hhmm(ts){const d=new Date(ts||Date.now());const p=function(n){return (n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes());}
   function writeSyncResult(o){
     o.at=Date.now();
@@ -5230,7 +5266,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
   function pairDevice(){
     return new Promise(function(resolve){
       const ov=document.createElement('div');
-      ov.className='vd-overlay';ov.id='zmgPairOv';ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');
+      ov.className='vd-overlay';ov.id='zmgPairOv';ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');ov.style.zIndex='9999';
       ov.innerHTML='<div class="vd-card" style="max-width:420px;padding:18px;box-sizing:border-box">'
         +'<div style="font-weight:800;font-size:16px;margin-bottom:6px">连接你的私有账本</div>'
         +'<div style="font-size:13px;line-height:1.7;color:#4a5650;margin-bottom:10px">这台设备还没有连接云端。粘贴 32 位恢复码即可读取你自己的数据；恢复码只在本机保存，不会上传。</div>'
