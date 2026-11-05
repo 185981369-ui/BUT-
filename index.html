@@ -1954,6 +1954,53 @@ const ZMG=(window.ZMG=window.ZMG||{});
   };
 
   /**
+   * 项目去重：同名（小区名 + 幢单元）合并为一条
+   * - 以 updatedAt 较新者为准，字段取并集（缺失字段用过旧记录补齐）
+   * - 密码优先保留更具体的那份（"6600" 优先于空/"无"）
+   * - 多余的记录不物理删除，返回墓碑 {id, mergedInto, deletedAt} 交给调用方落账
+   */
+  var PROJ_FIELDS=['comm','unit','geo','floors','designer','builder','note','pwd','plate','dStart','dEnd','sStart','sEnd'];
+  function projNormName(p){
+    return String((p&&p.comm)||'').replace(/\s+/g,'').toLowerCase()+'|'+String((p&&p.unit)||'').replace(/\s+/g,'').toLowerCase();
+  }
+  function projPwdRank(v){
+    var s=String(v==null?'':v).trim();
+    if(!s)return 0;
+    if(s==='无'||s==='无密码'||s==='没有'||s==='不需要')return 1;
+    return 2;
+  }
+  S.dedupeProjects=function(records,now){
+    var arr=(Array.isArray(records)?records:[]).slice();
+    var groups={},order=[];
+    arr.forEach(function(p){
+      if(!p||typeof p!=='object'||p.__deleted)return;
+      var k=projNormName(p);
+      if(!groups[k]){groups[k]=[];order.push(k);}
+      groups[k].push(p);
+    });
+    var out=[],tombs=[],st={merged:0,tombstoned:0};
+    order.forEach(function(k){
+      var g=groups[k];
+      if(g.length===1){out.push(g[0]);return;}
+      g.sort(function(a,b){return (b.updatedAt||0)-(a.updatedAt||0);});
+      var win=g[0];
+      for(var i=1;i<g.length;i++){
+        var lose=g[i];
+        PROJ_FIELDS.forEach(function(f){
+          var lv=win[f],ov=lose[f];
+          if((lv==null||lv==='')&&(ov!=null&&ov!==''))win[f]=ov;
+        });
+        if(projPwdRank(lose.pwd)>projPwdRank(win.pwd))win.pwd=lose.pwd;
+        tombs.push({id:String(lose.id||''),mergedInto:String(win.id||''),deletedAt:(now||Date.now()),name:String(lose.comm||lose.unit||'')});
+        if(String(lose.id)!==String(win.id))st.tombstoned++;
+      }
+      st.merged++;
+      out.push(win);
+    });
+    return {items:out,tombs:tombs.filter(function(t){return !!t.id&&t.id!==t.mergedInto;}),stats:st};
+  };
+
+  /**
    * 快照取舍决策（网页端「下载云端」与小程序 wx.cloud 拉取共用）
    * @param o {localHasData,localCount,cloudCount,cloudHasMedia,localTs,cloudTs}
    * @return {consider, adopt, reason}
@@ -4136,7 +4183,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.05-r15',at:'2026-11-05 11:20',tag:'r15'};
+  const BUILD={v:'2026.11.05-r16',at:'2026-11-05 14:30',tag:'r16'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -5496,7 +5543,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     const el=document.getElementById('topSub');
     if(!el)return;
     if(!el.getAttribute('data-base'))el.setAttribute('data-base',el.textContent);
-    const a=loadProjects();
+    const a=displayProjects();
     const p=getCurProj();
     let txt=el.getAttribute('data-base').replace(/[0-9]+ 个装修项目/,a.length+' 个装修项目');
     if(p&&(p.comm||p.unit))txt+=' · '+(p.comm||p.unit);
@@ -5517,17 +5564,34 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
       +(p.plate?'<div class="wb-proj-line">车牌：'+escH(p.plate)+'</div>':'')
       +'<button type="button" class="wb-proj-edit" data-i="'+i+'">修改</button>';
   }
+  // 展示层兜底：即使历史数据里仍有同名重复，也按 id + 名称（小区名/幢单元）去重，只渲染一张卡
+  function displayProjects(){
+    const a=loadProjects();
+    const seenId={},seenName={},out=[];
+    a.forEach(function(p,i){
+      if(!p||typeof p!=='object'||p.__deleted)return;
+      const id=String(p.id||'');
+      const nm=String(p.comm||p.unit||'').replace(/\s+/g,'').toLowerCase();
+      if(id&&seenId[id])return;
+      if(nm&&seenName[nm])return;
+      if(id)seenId[id]=1;
+      if(nm)seenName[nm]=1;
+      out.push({p:p,idx:i});
+    });
+    return out;
+  }
   function renderProjCards(){
     const el=document.getElementById('wbProj');
     if(!el)return;
-    const a=loadProjects();
+    const list=displayProjects();
     el.innerHTML='';
-    if(!a.length){
+    if(!list.length){
       el.innerHTML='<div class="wb-proj-empty">还没有项目：点右上角「项目设置」新增项目（小区名称 / 幢单元房号 / 地理位置 / 楼层总数）。</div>';
       return;
     }
     const ci=getCurIdx();
-    a.forEach((p,i)=>{
+    list.forEach(function(it){
+      const p=it.p,i=it.idx;
       const c=document.createElement('div');
       c.className='wb-proj-card'+(i===ci?' on':'');
       c.innerHTML=projCardHTML(p,i,i===ci);
@@ -8192,8 +8256,10 @@ render();
   // 任务F：分享视图复用同一套大图灯箱（双指缩放 / 全屏）
   try{ZMG.zoomGallery=zoomGallery;}catch(e){}
   // ===== 私有后端增量同步运行时（暴露为 ZMG.runtime，供顶层 privacy 卡的按钮调用）=====
-  const RT_SEQ_KEY='zmg_sync_seq_v1',RT_BASE_KEY='zmg_sync_base_v1',RT_TOMB_KEY='zmg_sync_tomb_v1';
+  const RT_SEQ_KEY='zmg_sync_seq_v1',RT_BASE_KEY='zmg_sync_base_v1',RT_TOMB_KEY='zmg_sync_tomb_v1',RT_PTOMB_KEY='zmg_sync_ptomb_v1';
   function rtTomb(){try{const m=JSON.parse(localStorage.getItem(RT_TOMB_KEY)||'{}');return (m&&typeof m==='object')?m:{};}catch(e){return {};}}
+  function rtPTomb(){try{const m=JSON.parse(localStorage.getItem(RT_PTOMB_KEY)||'{}');return (m&&typeof m==='object')?m:{};}catch(e){return {};}}
+  function rtPTombSave(m){try{localStorage.setItem(RT_PTOMB_KEY,JSON.stringify(m||{}));}catch(e){}}
   function rtBase(){try{const m=JSON.parse(localStorage.getItem(RT_BASE_KEY)||'{}');return (m&&typeof m==='object')?m:{};}catch(e){return {};}}
   function rtBytes(x){try{return new TextEncoder().encode(JSON.stringify(x)).length;}catch(e){try{return JSON.stringify(x).length;}catch(_){return 0;}}}
   function rtCloudRef(v){
@@ -8254,6 +8320,11 @@ render();
       const payload=Object.assign({},p,{id:key,updatedAt:p.updatedAt||now});
       ops.push({entity:'project',key:key,op:'upsert',updatedAt:payload.updatedAt,payload:payload});
     });
+    const ptombs=rtPTomb();
+    Object.keys(ptombs).forEach(function(id){
+      const t=ptombs[id]||{};
+      ops.push({entity:'project',key:String(id),op:'delete',updatedAt:Number(t.deletedAt)||now,payload:null});
+    });
     const ci=getCurIdx();
     ops.push({entity:'meta',key:'cur',op:'upsert',updatedAt:now,payload:{current:ci>=0?ci:0}});
     return ops;
@@ -8292,6 +8363,7 @@ render();
     const fr2=await flush();
     if(!fr2.ok)return {ok:false,code:fr2.code,message:fr2.message,ops:total,bytes:bytes,queued:queued};
     try{localStorage.setItem(RT_TOMB_KEY,'{}');}catch(e){}
+    try{localStorage.setItem(RT_PTOMB_KEY,'{}');}catch(e){}
     if(seq){try{localStorage.setItem(RT_SEQ_KEY,String(Math.max(seq,parseInt(localStorage.getItem(RT_SEQ_KEY)||'0',10)||0)));}catch(e){}}
     let todoN=0,prjN=0;
     ops.forEach(function(o){if(o.entity==='todo'&&o.op==='upsert')todoN++;else if(o.entity==='project')prjN++;});
@@ -8382,7 +8454,14 @@ render();
       return rtMaterialize(rec,lt,rTodoMap[String(rec.id)]||null);
     }).filter(function(rec){return !!rec&&typeof rec!=='object'?false:(!!rec&&!rec.__deleted);});
     const pRes=ZMG.core.sync.mergeRecords(localPrj.map(function(p){return Object.assign({},p);}),rproj,rtBase(),Date.now());
-    const pOut=pRes.records.filter(function(p){return !!p&&typeof p==='object'&&!p.__deleted;});
+    // 同名项目（本地 p<uuid> 与云端 p1/p2/p3 属于不同 id 代系）合并为一条，多余 id 落墓碑
+    const pDup=ZMG.core.sync.dedupeProjects(pRes.records.filter(function(p){return !!p&&typeof p==='object'&&!p.__deleted;}),Date.now());
+    const pOut=pDup.items;
+    if(pDup.tombs.length){
+      const pt=rtPTomb();
+      pDup.tombs.forEach(function(x){pt[x.id]=x;});
+      rtPTombSave(pt);
+    }
     try{
       const cm=rmeta.filter(function(m){return m&&m.id==='cur';})[0];
       const hasCur=localStorage.getItem(PROJ_CUR);
