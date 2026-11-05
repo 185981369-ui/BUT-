@@ -3193,8 +3193,8 @@ const ZMG=(window.ZMG=window.ZMG||{});
     devices:function(){return Number(c.space._dev||0)||0;},
     state:function(){
       const tk=c.sync.token(),base=c.api.base();
+      if(!tk)return {ok:false,t:'当前浏览器未连接云端，请输入恢复码'};
       if(!base)return {ok:false,t:'未配置私有后端地址'};
-      if(!tk)return {ok:false,t:'后端已配置，未绑定空间（无设备令牌）'};
       return {ok:true,t:'已绑定空间 '+(c.space.id()||'（ID 未保存）')};
     },
     genCode:function(){
@@ -3750,15 +3750,19 @@ const ZMG=(window.ZMG=window.ZMG||{});
   function renderShares(list){
     const box=document.getElementById('shList');
     if(!box)return;
-    if(!Array.isArray(list)||!list.length){box.textContent='还没有分享链接。';return;}
-    box.innerHTML=list.map(function(x){
+    const all=Array.isArray(list)?list:[];
+    const active=all.filter(function(x){return !x.revoked&&!x.expired;});
+    const hidden=all.length-active.length;
+    const countLine='<div style="font-size:12px;color:#6b7a71;margin-bottom:4px">有效分享 '+active.length+' 条'
+      +(hidden?'（已撤销/过期 '+hidden+' 条已隐藏）':'')+'</div>';
+    if(!active.length){box.innerHTML=countLine;return;}
+    box.innerHTML=countLine+active.map(function(x){
       const mode=x.mode==='edit'?'可编辑':'仅查看';
       const exp=x.expiresAt?('至 '+new Date(x.expiresAt).toLocaleDateString()):'长期';
-      const dead=x.revoked?'已撤销':(x.expired?'已过期':'有效');
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed #e6ebe7">'
         +'<div><div style="font-size:12.5px;color:#2f3b35">'+c.esc(x.label||'（无备注）')+' · '+mode+' · '+exp+'</div>'
-        +'<div style="font-size:11px;color:#98a19b">'+c.esc(dead)+' · 使用 '+Number(x.useCount||0)+' 次</div></div>'
-        +(x.revoked?'':'<button type="button" class="v-chip" data-rev="'+c.esc(x.id)+'">撤销</button>')
+        +'<div style="font-size:11px;color:#98a19b">使用 '+Number(x.useCount||0)+' 次</div></div>'
+        +'<button type="button" class="v-chip" data-rev="'+c.esc(x.id)+'">撤销</button>'
         +'</div>';
     }).join('');
   }
@@ -4133,7 +4137,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.05-r13',at:'2026-11-05 09:54',tag:'r13'};
+  const BUILD={v:'2026.11.05-r14',at:'2026-11-05 10:40',tag:'r14'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
