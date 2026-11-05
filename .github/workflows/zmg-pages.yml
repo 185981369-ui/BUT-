@@ -24,23 +24,23 @@ jobs:
         with:
           ref: main
           path: _src
-      - name: Apply r17 build and verify sha256
+      - name: Apply r18 build and verify sha256
         run: |
           set -e
-          node _src/deploy/r17_patch.js index.html
+          node _src/deploy/r18_patch.js index.html
           ACTUAL=$(sha256sum index.html | awk '{print $1}')
-          EXPECTED=$(tr -d '[:space:]' < _src/deploy/r17_expected.txt)
+          EXPECTED=$(tr -d '[:space:]' < _src/deploy/r18_expected.txt)
           echo "actual=$ACTUAL expected=$EXPECTED"
           test "$ACTUAL" = "$EXPECTED"
-          grep -o "2026.11.05-r17" index.html | head -1
+          grep -o "2026.11.06-r18" index.html | head -1
           touch .nojekyll
-      - name: Commit r17 to gh-pages
+      - name: Commit r18 to gh-pages
         run: |
           set -e
           git config user.name zmg-bot
           git config user.email zmg-bot@users.noreply.github.com
           git add index.html .nojekyll
-          git commit -m "publish r17 to gh-pages [skip ci]" || true
+          git commit -m "publish r18 to gh-pages [skip ci]" || true
           git push origin HEAD:gh-pages
       - name: Request Pages build
         env:

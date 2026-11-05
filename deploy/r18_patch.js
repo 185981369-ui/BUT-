@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('fs'),zlib=require('zlib');
+const hunks=JSON.parse(zlib.gunzipSync(Buffer.from('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','base64')).toString('utf8'));
+const file=process.argv[2]||'index.html';
+let src=fs.readFileSync(file,'utf8');
+if(src.indexOf('2026.11.05-r17')<0)throw new Error('base is not r17');
+if(src.indexOf('2026.11.06-r18')>=0)throw new Error('already r18');
+const p=src.indexOf("'use strict';");
+const open=src.lastIndexOf('<script>',p);
+const close=src.lastIndexOf('</script>',src.lastIndexOf('<script>window.__ZMG_FONT_B64='));
+const lines=src.slice(open,close+9).split('\n');
+hunks.slice().sort(function(x,y){return y.line-x.line;}).forEach(function(h){lines.splice(h.line,h.del,...h.add);});
+src=src.slice(0,open)+lines.join('\n')+src.slice(close+9);
+fs.writeFileSync(file,src,'utf8');
+console.log('r18 patched chars='+src.length);
