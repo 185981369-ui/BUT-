@@ -1541,6 +1541,106 @@ const ZMG=(window.ZMG=window.ZMG||{});
       if(top){top.remove();e.preventDefault();}
     });
   };
+  // ---- 项目列表唯一入口（r17）：所有视图都必须走这里，禁止再直接读原始 list ----
+  function projLabelOf(p){return String((p&&(p.comm||p.unit))||'').replace(/\s+/g,'').toLowerCase();}
+  c.projects.label=projLabelOf;
+  // 过滤墓碑（deletedAt / __deleted）+ 按 id / 显示名（comm||unit）去重
+  c.projects.list=function(){
+    const a=c.projects.load();
+    const seenId={},seenName={},out=[];
+    a.forEach(function(p){
+      if(!p||typeof p!=='object'||p.__deleted||p.deletedAt)return;
+      const id=String(p.id||''),nm=projLabelOf(p);
+      if(id&&seenId[id])return;
+      if(nm&&seenName[nm])return;
+      if(id)seenId[id]=1;
+      if(nm)seenName[nm]=1;
+      out.push(p);
+    });
+    return out;
+  };
+  // 数据层清理：过滤墓碑 → 同名合并（保留墓碑）→ 待办里的项目下标重映射
+  c.projects.compact=function(){
+    const PKEY=c.keys.projects,TKEY=c.keys.todos,CKEY=c.keys.projCur,PTKEY='zmg_sync_ptomb_v1';
+    const FIELDS=['comm','unit','geo','floors','designer','builder','note','pwd','plate','dStart','dEnd','sStart','sEnd'];
+    const now=Date.now();
+    const rank=function(v){const s=String(v==null?'':v).trim();if(!s)return 0;if(s==='无'||s==='无密码'||s==='没有'||s==='不需要')return 1;return 2;};
+    let changed=false;
+    const pr=c.store.read(PKEY);
+    const raw=(pr.state==='ok'&&Array.isArray(pr.value))?pr.value:[];
+    const map={},removed=[];
+    let out=raw.slice();
+    if(raw.length){
+      const groups={},order=[];
+      raw.forEach(function(p,i){
+        if(!p||typeof p!=='object'){map[i]=-1;return;}
+        if(p.__deleted||p.deletedAt){
+          map[i]=-1;
+          if(p.id)removed.push({id:String(p.id),mergedInto:'',deletedAt:Number(p.deletedAt)||now,name:String(p.comm||p.unit||'')});
+          return;
+        }
+        let k=projLabelOf(p);
+        if(!k)k='__id__'+String(p.id||('i'+i));
+        if(!groups[k]){groups[k]=[];order.push(k);}
+        groups[k].push(i);
+      });
+      // 每组选 updatedAt 最新的作保留项；组内所有下标都映射到保留项的新下标
+      const owner={},winSet={},winNew={};
+      order.forEach(function(k){
+        const a=groups[k].slice().sort(function(x,y){return (raw[y].updatedAt||0)-(raw[x].updatedAt||0);});
+        const wi=a[0];winSet[wi]=k;
+        a.forEach(function(j){owner[j]=wi;});
+      });
+      out=[];
+      raw.forEach(function(p,i){
+        if(!winSet[i])return;
+        const k=winSet[i];
+        const win=Object.assign({},raw[i]);
+        groups[k].forEach(function(j){
+          if(j===i)return;
+          const lose=raw[j];
+          FIELDS.forEach(function(f){
+            const lv=win[f],ov=lose[f];
+            if((lv==null||lv==='')&&(ov!=null&&ov!==''))win[f]=ov;
+          });
+          if(rank(lose.pwd)>rank(win.pwd))win.pwd=lose.pwd;
+          if(lose.id&&String(lose.id)!==String(win.id))removed.push({id:String(lose.id),mergedInto:String(win.id||''),deletedAt:now,name:String(lose.comm||lose.unit||'')});
+        });
+        winNew[i]=out.length;
+        out.push(win);
+      });
+      Object.keys(owner).forEach(function(k){map[Number(k)]=winNew[owner[Number(k)]];});
+      raw.forEach(function(p,i){if(!(i in owner)&&map[i]==null)map[i]=-1;});
+      try{changed=(out.length!==raw.length)||(JSON.stringify(out)!==JSON.stringify(raw));}catch(e){changed=true;}
+    }
+    if(changed){const w=c.store.write(PKEY,out);if(!w.ok)return;}
+    if(removed.length){
+      let pt={};
+      try{const v=JSON.parse(localStorage.getItem(PTKEY)||'{}');if(v&&typeof v==='object')pt=v;}catch(e){}
+      removed.forEach(function(t){if(t.id)pt[t.id]=t;});
+      try{localStorage.setItem(PTKEY,JSON.stringify(pt));}catch(e){}
+    }
+    let ech=false;
+    const tr=c.store.read(TKEY);
+    if(tr.state==='ok'&&Array.isArray(tr.value)){
+      tr.value.forEach(function(e){
+        if(!e||typeof e!=='object'||e.proj==null||e.proj==='')return;
+        const n=Number(e.proj);
+        if(!isFinite(n)||map[n]==null||map[n]===n)return;
+        e.proj=map[n]<0?'':map[n];
+        e.updatedAt=now;
+        ech=true;
+      });
+      if(ech)c.store.write(TKEY,tr.value);
+    }
+    try{
+      const cs=localStorage.getItem(CKEY);
+      if(cs!==null&&cs!==''){
+        const n=parseInt(cs,10);
+        if(isFinite(n)&&map[n]!=null&&map[n]!==n)localStorage.setItem(CKEY,String(map[n]<0?0:map[n]));
+      }
+    }catch(e){}
+  };
 })(ZMG);
 /* ===== core/model.js — 平台无关数据模型（纯 JS，零平台 API） =====
    职责：待办/项目/媒体的数据结构、id 生成、updatedAt 时间戳、墓碑（删除标记）
@@ -4183,12 +4283,12 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.05-r16',at:'2026-11-05 14:30',tag:'r16'};
+  const BUILD={v:'2026.11.05-r17',at:'2026-11-05 15:20',tag:'r17'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
     inject();refreshSpace();refreshAuto();loadShares();
-    try{const _pp=loadProjects();ZMG.secrets.openAll(_pp).then(function(n){if(n){renderTopSub();renderProjCards();}});}catch(e){}
+    try{const _pp=ZMG.projects.load();ZMG.secrets.openAll(_pp).then(function(n){if(n){renderTopSub();renderProjCards();}});}catch(e){}
     backupGuide();
     setTimeout(function(){c.autoExport.tick();},4000);
     setInterval(function(){c.autoExport.tick();},60000);
@@ -4531,6 +4631,9 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
   try{window.renderRemain();}catch(e){console.log('REMAIN_ERR',e&&e.stack||e);}
 })();
 
+/* r17：项目数据层清理必须先于任何项目列表渲染（去重 + 墓碑 + 待办项目下标重映射） */
+try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}catch(_){}}
+
 /* ===== 交互5：选材分类清单（设备/主材/软装/其他 · 按项目） ===== */
 (function(){
   const MAT_KEY='zmg_mat_lib_v1';
@@ -4538,7 +4641,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
   const CATS={device:['设备清单','设备类：中央空调、新风、地暖、净水、智能等'],main:['主材清单','主材类：瓷砖、地板、木作、石材、卫浴等'],soft:['软装清单','软装类：家具、灯具、窗帘、饰品等'],other:['其他清单','其他类：可自由编辑增删条目']};
   const emptyCat=()=>({device:[],main:[],soft:[],other:[]});
   const escS=ZMG.esc;
-  const loadProjs=ZMG.projects.load;
+  const loadProjs=ZMG.projects.list;
   const projName=ZMG.projects.name;
   const curProjName=ZMG.projects.curName;
   let lib={};
@@ -4620,7 +4723,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
   const STS=['出方案中','深化设计中','已交付'];
   const STEP_DEFS=['平面布置方案','效果图确认','施工图绘制','节点深化大样','方案交底交付'];
   const escS=ZMG.esc;
-  const loadProjs=ZMG.projects.load;
+  const loadProjs=ZMG.projects.list;
   const projName=ZMG.projects.name;
   const curName=ZMG.projects.curName;
   let ds={};
@@ -5564,14 +5667,16 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
       +(p.plate?'<div class="wb-proj-line">车牌：'+escH(p.plate)+'</div>':'')
       +'<button type="button" class="wb-proj-edit" data-i="'+i+'">修改</button>';
   }
-  // 展示层兜底：即使历史数据里仍有同名重复，也按 id + 名称（小区名/幢单元）去重，只渲染一张卡
+  // 项目显示名归一：comm||unit（与 projShort 完全一致），用于全站去重
+  function projLabel(p){return ZMG.projects.label(p);}
+  // 展示层兜底：按 id + 名称去重，并过滤墓碑（deletedAt / __deleted）——全站唯一项目列表入口
   function displayProjects(){
     const a=loadProjects();
     const seenId={},seenName={},out=[];
     a.forEach(function(p,i){
-      if(!p||typeof p!=='object'||p.__deleted)return;
+      if(!p||typeof p!=='object'||p.__deleted||p.deletedAt)return;
       const id=String(p.id||'');
-      const nm=String(p.comm||p.unit||'').replace(/\s+/g,'').toLowerCase();
+      const nm=projLabel(p);
       if(id&&seenId[id])return;
       if(nm&&seenName[nm])return;
       if(id)seenId[id]=1;
@@ -5580,6 +5685,9 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     });
     return out;
   }
+  // 视图侧统一取数：所有下拉/分组/表单/分享面板都必须用这一份
+  function listProjects(){return ZMG.projects.list();}
+  function projByRawIdx(i){const n=Number(i);const it=displayProjects().filter(function(x){return x.idx===n;})[0];return it?it.p:null;}
   function renderProjCards(){
     const el=document.getElementById('wbProj');
     if(!el)return;
@@ -5943,10 +6051,10 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
   function fillProjFilter(){
     const sel=document.getElementById('osProjSel');
     if(!sel)return;
-    const a=loadProjects();
+    const a=displayProjects();
     const hasU=ENTRIES.some(e=>e.proj==null||e.proj==='');
     let h='<option value="全部">全部项目</option>';
-    a.forEach((p,i)=>{h+='<option value="'+i+'"'+(fProjF===String(i)?' selected':'')+'>'+escH(projShort(p))+'</option>';});
+    a.forEach(it=>{const p=it.p,i=it.idx;h+='<option value="'+i+'"'+(fProjF===String(i)?' selected':'')+'>'+escH(projShort(p))+'</option>';});
     if(hasU)h+='<option value="未指定"'+(fProjF==='未指定'?' selected':'')+'>未指定</option>';
     sel.innerHTML=h;
     sel.value=fProjF;
@@ -5964,8 +6072,8 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     if(bsel){
       window.fProjBench='全部';
       let bh='<option value="全部">全部项目</option>';
-      const pa=loadProjects();
-      pa.forEach((p,i)=>{bh+='<option value="'+i+'">'+escH(projShort(p))+'</option>';});
+      const pa=displayProjects();
+      pa.forEach(it=>{bh+='<option value="'+it.idx+'">'+escH(projShort(it.p))+'</option>';});
       bsel.innerHTML=bh;
       bsel.addEventListener('change',()=>{
         window.fProjBench=bsel.value;
@@ -6247,7 +6355,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     setTimeout(()=>{const inp=ov.querySelector('#cfIn');if(inp)inp.focus();},50);
   }
   function syncForm(){
-    fProjSel.innerHTML='<option value="">未指定项目</option>'+loadProjects().map((p,i)=>'<option value="'+i+'">'+escH(projShort(p))+'</option>').join('');
+    fProjSel.innerHTML='<option value="">未指定项目</option>'+displayProjects().map(it=>'<option value="'+it.idx+'">'+escH(projShort(it.p))+'</option>').join('');
     fProjSel.value=draft.proj!=null&&draft.proj!==''?String(draft.proj):'';
     renderFloorRow();
     fRoomVal.textContent=draft.room||'点击选择房间';
@@ -6919,7 +7027,7 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
     if(fNeedDesign){
       draft.needDesign=fNeedDesign.checked;
       if(editingId==null&&fNeedDesign.checked){
-        const pj=draft.proj!==''&&draft.proj!=null&&loadProjects()[draft.proj]?projShort(loadProjects()[draft.proj]):'';
+        const pj=draft.proj!==''&&draft.proj!=null&&projByRawIdx(draft.proj)?projShort(projByRawIdx(draft.proj)):'';
         addDesignTodo('设计更改：'+makeTitle(draft),pj);
       }
       fNeedDesign.checked=false;
@@ -8011,7 +8119,7 @@ render();
   });
 
   function osNeedProj(){
-    if(fProjF==='全部'&&loadProjects().length>1){toast('请先在「按项目筛选」中选择项目，再生成/导出。');return false;}
+    if(fProjF==='全部'&&listProjects().length>1){toast('请先在「按项目筛选」中选择项目，再生成/导出。');return false;}
     return true;
   }
   osVendorSend.addEventListener('click',()=>{if(!osNeedProj())return;openSend('vendor');});
@@ -8089,7 +8197,7 @@ render();
       if(typeof v==='number'&&v>1e11){const d=new Date(v);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
       return String(v).slice(0,10);
     }
-    const projs=loadProjects();
+    const projs=listProjects();
     const byName={};const order=[];
     projs.forEach(p=>{const n=projShort(p);if(!(n in byName)){byName[n]=[];order.push(n);}});
     arr.forEach(t=>{
@@ -8462,6 +8570,32 @@ render();
       pDup.tombs.forEach(function(x){pt[x.id]=x;});
       rtPTombSave(pt);
     }
+    // 合并后项目顺序会变：待办里的项目下标按「本地旧列表 → 新列表」重映射，避免串项目
+    const pMap={};
+    (function(){
+      const byId={},byName={};
+      pOut.forEach(function(p,i){if(p.id)byId[String(p.id)]=i;const k=projLabel(p);if(k&&byName[k]==null)byName[k]=i;});
+      localPrj.forEach(function(p,i){
+        const id=String((p&&p.id)||'');
+        if(id&&byId[id]!=null){pMap[i]=byId[id];return;}
+        const k=projLabel(p);
+        pMap[i]=(k&&byName[k]!=null)?byName[k]:-1;
+      });
+    })();
+    merged.forEach(function(e){
+      if(!e||typeof e!=='object'||e.proj==null||e.proj==='')return;
+      const n=Number(e.proj);
+      if(!isFinite(n)||pMap[n]==null||pMap[n]===n)return;
+      e.proj=pMap[n]<0?'':pMap[n];
+      e.updatedAt=Date.now();
+    });
+    try{
+      const cs=localStorage.getItem(PROJ_CUR);
+      if(cs!==null&&cs!==''){
+        const n=parseInt(cs,10);
+        if(isFinite(n)&&pMap[n]!=null&&pMap[n]!==n)ZMG.projects.setCur(pMap[n]<0?0:pMap[n]);
+      }
+    }catch(e){}
     try{
       const cm=rmeta.filter(function(m){return m&&m.id==='cur';})[0];
       const hasCur=localStorage.getItem(PROJ_CUR);
@@ -8485,7 +8619,7 @@ render();
   }
   ZMG.runtime={
     entries:function(){return ENTRIES;},
-    projects:function(){return loadProjects();},
+    projects:function(){return listProjects();},
     curIdx:function(){return getCurIdx();},
     collectOps:async function(){
       if((await saveNow())===false)return {saved:false,ops:[]};
