@@ -52,14 +52,13 @@ body{
 .os-proj-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .os-proj-row .os-field{margin-bottom:0}
 .os-proj-row select{padding:8px 10px;margin-top:6px;width:100%;background:#fff}
-.wb-proj{margin:12px 2px 4px;display:flex;flex-wrap:wrap;gap:8px}
+.wb-proj{margin:12px 2px 4px;display:grid;grid-template-columns:1fr;gap:10px}
 .wb-proj-empty{font-size:12.5px;color:var(--ink-2);line-height:1.6;width:100%}
-.wb-proj-card{flex:1 1 calc(33.33% - 8px);min-width:150px;border:1px solid #dce8e1;border-radius:12px;background:#f4faf6;padding:11px 12px;cursor:pointer}
+.wb-proj-card{border:1px solid #dce8e1;border-radius:12px;background:#f4faf6;padding:11px 12px;cursor:pointer}
 .wb-proj-card.on{border-color:#1d7a5c;background:#eef7f1;box-shadow:0 2px 8px rgba(29,122,92,.12)}
 .wb-proj-name{font-size:14px;font-weight:700;color:#14523c}
 .wb-proj-line{font-size:12px;color:var(--ink-2);margin-top:3px}
 .wb-proj-edit{margin-top:7px;padding:4px 10px;border:1px solid #bcd9cb;border-radius:7px;background:#fff;color:#1d7a5c;font-size:11.5px;cursor:pointer}
-.wb-proj-sel-row{width:100%;display:flex;align-items:center;gap:8px}
 .proj-btn{margin-left:auto;padding:9px 15px;border:none;border-radius:10px;background:#1d7a5c;color:#fff;font-size:13px;font-weight:600;cursor:pointer;flex:none}
 .head-btns{margin-left:auto;display:flex;gap:8px;align-items:center}
 .head-btns .proj-btn{margin-left:0}
@@ -587,7 +586,8 @@ input[type=date].os-input{-webkit-appearance:none}
   /* 弹窗放宽 */
   .vd-card,.od-card{max-width:720px}
   .os-form-card{padding:22px 24px}
-  .wb-proj-card{min-width:250px;padding:14px 16px}
+  .wb-proj{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wb-proj-card{padding:14px 16px}
   .wb-stat{gap:14px}
   .wb-stat-card{padding:14px 6px;min-height:64px}
   .wb-stat-card b{font-size:26px}
@@ -631,7 +631,6 @@ input[type=date].os-input{-webkit-appearance:none}
 /* 窄屏（手机）：真正单列 */
 @media (max-width:640px){
   .os-proj-row{grid-template-columns:1fr}
-  .wb-proj-card{flex:1 1 100%}
   .wb-stat{grid-template-columns:repeat(2,1fr)}
 }
 /* 手机端触控与排版：顶栏按钮 ≥44px、标题不换行、按钮不挤压 */
@@ -4137,7 +4136,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.05-r14',at:'2026-11-05 10:40',tag:'r14'};
+  const BUILD={v:'2026.11.05-r15',at:'2026-11-05 11:20',tag:'r15'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -5527,35 +5526,17 @@ function rgb(a){return `rgb(${a[0]},${a[1]},${a[2]})`;}
       el.innerHTML='<div class="wb-proj-empty">还没有项目：点右上角「项目设置」新增项目（小区名称 / 幢单元房号 / 地理位置 / 楼层总数）。</div>';
       return;
     }
-    if(a.length<=3){
-      a.forEach((p,i)=>{
-        const c=document.createElement('div');
-        c.className='wb-proj-card'+(i===getCurIdx()?' on':'');
-       c.innerHTML=projCardHTML(p,i,i===getCurIdx());
-       if(ZMG.secrets)ZMG.secrets.bindCard(c,p,i);
-       c.querySelector('.wb-proj-edit').addEventListener('click',ev=>{ev.stopPropagation();showProjEdit(i);});
-        const onCard=()=>{setCurIdx(i);renderTopSub();renderProjCards();};
-        c.addEventListener('click',onCard);ZMG.kbd(c,onCard);
-        el.appendChild(c);
-      });
-      return;
-    }
-    const row=document.createElement('div');
-    row.className='wb-proj-sel-row';
-    row.innerHTML='<label style="font-size:12.5px;color:var(--ink-2);flex:none">当前项目</label>'
-      +'<select id="wbProjSel" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #d9ded9;border-radius:8px;font-size:13px;background:#fff;color:var(--ink)">'
-      +a.map((p,i)=>'<option value="'+i+'"'+(i===getCurIdx()?' selected':'')+'>'+escH(projShort(p))+'</option>').join('')
-      +'</select>';
-    el.appendChild(row);
-    const sel=el.querySelector('#wbProjSel');
-    sel.addEventListener('change',()=>{setCurIdx(parseInt(sel.value,10));renderTopSub();renderProjCards();});
     const ci=getCurIdx();
-    const c=document.createElement('div');
-    c.className='wb-proj-card on';
-    c.innerHTML=projCardHTML(a[ci],ci,true);
-    if(ZMG.secrets)ZMG.secrets.bindCard(c,a[ci],ci);
-    c.querySelector('.wb-proj-edit').addEventListener('click',ev=>{ev.stopPropagation();showProjEdit(ci);});
-    el.appendChild(c);
+    a.forEach((p,i)=>{
+      const c=document.createElement('div');
+      c.className='wb-proj-card'+(i===ci?' on':'');
+      c.innerHTML=projCardHTML(p,i,i===ci);
+      if(ZMG.secrets)ZMG.secrets.bindCard(c,p,i);
+      c.querySelector('.wb-proj-edit').addEventListener('click',ev=>{ev.stopPropagation();showProjEdit(i);});
+      const onCard=()=>{setCurIdx(i);renderTopSub();renderProjCards();};
+      c.addEventListener('click',onCard);ZMG.kbd(c,onCard);
+      el.appendChild(c);
+    });
   }
   function showProjectForm(){showProjEdit(-1);}
   function showProjEdit(idx){
