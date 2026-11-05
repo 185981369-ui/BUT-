@@ -3690,7 +3690,8 @@ const ZMG=(window.ZMG=window.ZMG||{});
 
   function inject(){
     const me=document.getElementById('view-me');
-    if(!me||document.getElementById('zmgShareCard'))return;
+    const sys=document.getElementById('view-system');
+    if(!me||!sys||document.getElementById('zmgShareCard'))return;
     const spaceCard=cardWrap('云端空间（设备令牌）',
       '<div id="shSpaceState" style="font-size:12px;color:#6b7a71;line-height:1.7">检查中…</div>'
       +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
@@ -3720,9 +3721,15 @@ const ZMG=(window.ZMG=window.ZMG||{});
       +'</div>'
       +'<div id="aeLast" style="font-size:12px;color:#6b7a71;margin-top:8px">—</div>'
       +'<div style="font-size:11.5px;color:#b07b12;background:#fff4e5;border:1px solid #f0c48a;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.6">浏览器只能在页面打开时导出：如果这个月没打开过页面，就不会有新备份。搬运脚本会检测并提醒，而不是静默跳过。</div>');
-    me.appendChild(spaceCard);
-    me.appendChild(shareCard);
     me.appendChild(aeCard);
+    const anchor=document.getElementById('privacyCard');
+    if(anchor&&anchor.parentNode===sys){
+      anchor.insertAdjacentElement('afterend',spaceCard);
+      spaceCard.insertAdjacentElement('afterend',shareCard);
+    }else{
+      sys.appendChild(spaceCard);
+      sys.appendChild(shareCard);
+    }
     bind();
   }
 
@@ -3754,14 +3761,6 @@ const ZMG=(window.ZMG=window.ZMG||{});
         +(x.revoked?'':'<button type="button" class="v-chip" data-rev="'+c.esc(x.id)+'">撤销</button>')
         +'</div>';
     }).join('');
-    box.querySelectorAll('[data-rev]').forEach(function(b){
-      b.addEventListener('click',async function(){
-        if(!confirm('撤销后该链接立即失效，确定吗？'))return;
-        const r=await c.share.revoke(b.getAttribute('data-rev'));
-        toastOk(r.ok?'已撤销':('撤销失败：'+(r.message||r.code)));
-        loadShares();
-      });
-    });
   }
   async function loadShares(){
     if(!c.sync.token()){renderShares([]);return;}
@@ -4036,35 +4035,59 @@ const ZMG=(window.ZMG=window.ZMG||{});
     });
   }
 
+  async function onSpaceCreate(){
+    if(!c.api.configured()){toastOk('先在「数据与隐私」填写私有后端地址并选择「私有后端」。');return;}
+    if(c.sync.token()&&!confirm('本机已有设备令牌，继续创建会切换到一个新空间（旧令牌不会自动迁移）。继续？'))return;
+    const r=await c.space.create();
+    if(!r.ok){toastOk('创建失败：'+(r.message||r.code));return;}
+    refreshSpace();
+    const ov=document.createElement('div');ov.className='vd-overlay';ZMG.dialog(ov);
+    ov.innerHTML='<div class="vd-box" style="max-width:400px;padding:18px">'
+      +'<div style="font-weight:700;font-size:15px;margin-bottom:8px">恢复码（只显示这一次）</div>'
+      +'<div style="font-size:12px;color:#6b7a71;line-height:1.7">请抄到纸上或密码管理器。换电脑/手机时用它加入同一个空间。</div>'
+      +'<div id="gsCode" style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:1.5px;word-break:break-all;background:#f7faf8;border:1px dashed #cfe0d6;border-radius:8px;padding:10px;margin-top:10px">'+c.esc(r.code)+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="gsCopy" class="v-chip on" style="flex:1">复制</button><button type="button" id="gsOk" class="v-chip" style="flex:1">我已记下</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#gsCopy').addEventListener('click',function(){copyText(r.code);});
+    ov.querySelector('#gsOk').addEventListener('click',function(){ov.remove();});
+    loadShares();refreshAuto();
+  }
+  async function onSpaceJoin(){
+    if(!c.api.configured()){toastOk('先在「数据与隐私」填写私有后端地址并选择「私有后端」。');return;}
+    const R=ZMG.runtime;
+    if(!R||typeof R.pairDevice!=='function'){toastOk('绑定接口未就绪：请刷新页面后重试。');return;}
+    if(c.sync.token()&&!confirm('本机已有设备令牌，继续会切换到另一个空间。继续？'))return;
+    const r=await R.pairDevice();
+    if(!r.ok){toastOk('未连接：'+(r.message||r.code||'已取消'));return;}
+    refreshSpace();loadShares();toastOk('已加入空间，设备令牌已保存。');
+  }
+  async function revokeShare(b){
+    if(!confirm('撤销后该链接立即失效，确定吗？'))return;
+    b.disabled=true;
+    try{
+      const r=await c.share.revoke(b.getAttribute('data-rev'));
+      toastOk(r.ok?'已撤销':('撤销失败：'+(r.message||r.code)));
+      loadShares();
+    }catch(e){b.disabled=false;toastOk('撤销失败：'+((e&&e.message)||'未知错误'));}
+  }
+  // 任务G：云端空间 / 分享按钮改用 document 级委托，卡片搬到「系统」页后依然生效
+  function bindShareDelegation(){
+    if(bindShareDelegation.done)return;
+    bindShareDelegation.done=true;
+    document.addEventListener('click',function(ev){
+      const t=ev.target&&ev.target.closest?ev.target.closest('#shSpaceCreate,#shSpaceJoin,#shCreate,[data-rev]'):null;
+      if(!t||t.disabled)return;
+      ev.preventDefault();
+      if(t.hasAttribute('data-rev')){revokeShare(t);return;}
+      if(t.id==='shSpaceCreate'){onSpaceCreate();return;}
+      if(t.id==='shSpaceJoin'){onSpaceJoin();return;}
+      if(t.id==='shCreate'){openSharePanel();}
+    },true);
+  }
+  bindShareDelegation();
+
   function bind(){
     const sp=(id,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener('click',fn);};
-    sp('shSpaceCreate',async function(){
-      if(!c.api.configured()){toastOk('先在「数据与隐私」填写私有后端地址并选择「私有后端」。');return;}
-      if(c.sync.token()&&!confirm('本机已有设备令牌，继续创建会切换到一个新空间（旧令牌不会自动迁移）。继续？'))return;
-      const r=await c.space.create();
-      if(!r.ok){toastOk('创建失败：'+(r.message||r.code));return;}
-      refreshSpace();
-      const ov=document.createElement('div');ov.className='vd-overlay';ZMG.dialog(ov);
-      ov.innerHTML='<div class="vd-box" style="max-width:400px;padding:18px">'
-        +'<div style="font-weight:700;font-size:15px;margin-bottom:8px">恢复码（只显示这一次）</div>'
-        +'<div style="font-size:12px;color:#6b7a71;line-height:1.7">请抄到纸上或密码管理器。换电脑/手机时用它加入同一个空间。</div>'
-        +'<div id="gsCode" style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:1.5px;word-break:break-all;background:#f7faf8;border:1px dashed #cfe0d6;border-radius:8px;padding:10px;margin-top:10px">'+c.esc(r.code)+'</div>'
-        +'<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="gsCopy" class="v-chip on" style="flex:1">复制</button><button type="button" id="gsOk" class="v-chip" style="flex:1">我已记下</button></div></div>';
-      document.body.appendChild(ov);
-      ov.querySelector('#gsCopy').addEventListener('click',function(){copyText(r.code);});
-      ov.querySelector('#gsOk').addEventListener('click',function(){ov.remove();});
-      loadShares();refreshAuto();
-    });
-    sp('shSpaceJoin',async function(){
-      if(!c.api.configured()){toastOk('先在「数据与隐私」填写私有后端地址并选择「私有后端」。');return;}
-      const R=ZMG.runtime;
-      if(!R||typeof R.pairDevice!=='function'){toastOk('绑定接口未就绪：请刷新页面后重试。');return;}
-      if(c.sync.token()&&!confirm('本机已有设备令牌，继续会切换到另一个空间。继续？'))return;
-      const r=await R.pairDevice();
-      if(!r.ok){toastOk('未连接：'+(r.message||r.code||'已取消'));return;}
-      refreshSpace();loadShares();toastOk('已加入空间，设备令牌已保存。');
-    });
-    sp('shCreate',function(){openSharePanel();});
     const en=document.getElementById('aeEnable');
     if(en)en.addEventListener('change',function(){c.autoExport.save({enabled:en.checked});refreshAuto();});
     const day=document.getElementById('aeDay');
@@ -4110,7 +4133,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.04-r12',at:'2026-11-04 20:20',tag:'r12'};
+  const BUILD={v:'2026.11.05-r13',at:'2026-11-05 09:54',tag:'r13'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
