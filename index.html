@@ -4283,7 +4283,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.05-r17',at:'2026-11-05 15:20',tag:'r17'};
+  const BUILD={v:'2026.11.06-r18',at:'2026-11-06 12:00',tag:'r18'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -7193,7 +7193,8 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
     const PAPER=PDF_PAPERS[PDFP.paper]||PDF_PAPERS['4A0'];
     const PAGE_W_MM=PAPER.w,PAGE_H_MM=PAPER.h;
     const isPhone=/iPhone|iPod|Android|Mobile/i.test(navigator.userAgent||'');
-    const M=Math.max(10,Math.round(PAGE_W_MM*0.024));    // 页边距随纸张等比（4A0≈40mm，A3≈10mm）
+    // r18：版式对齐参考 PDF（4A0 单页 · 四周 20mm 页边距 · 标题区/正文/页脚三段式）
+    const M=Math.round(PAGE_W_MM*0.0119);                // 页边距随纸张等比（4A0=20mm，与参考 PDF 一致；2A0≈14mm，A0≈10mm）
     const CW=PAGE_W_MM-2*M;                              // 内容区宽（mm）
     const CH=PAGE_H_MM-2*M;                              // 内容区高（mm）
     const PAD=Math.max(4,Math.round(CW*0.008));          // 卡片内边距（4A0≈13mm）
@@ -7210,6 +7211,28 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
     mask.textContent='正在生成 '+PAGE_W_MM+'×'+PAGE_H_MM+'mm 图纸（原图嵌入 + 矢量文字），请稍候…';
     document.body.appendChild(mask);
     try{
+      // r18：导出前把 {__idb} 图片引用解析成 dataURL。此前 addImage 直接收到引用对象会抛
+      // "charCodeAt is not a function"，照片被静默丢弃（PDF 只剩文字）。此处解析后原图字节 1:1 直嵌。
+      const isDU=function(v){return typeof v==='string'&&v.indexOf('data:')===0;};
+      list=list.map(function(e){return Object.assign({},e);});
+      const hydOne=async function(arr){
+        if(!Array.isArray(arr))return;
+        for(let i=0;i<arr.length;i++){
+          const v=arr[i];
+          if(isDU(v)){arr[i]=String(v);continue;}
+          if(v&&typeof v==='object'&&v.__idb){
+            try{const u=await ZMG.media.local.get(v.__idb);if(isDU(u))arr[i]=String(u);}catch(e){}
+          }
+        }
+      };
+      for(const e of list){
+        if(Array.isArray(e.imgs)){e.imgs=e.imgs.slice();await hydOne(e.imgs);}
+        if(Array.isArray(e.pnotes))e.pnotes=e.pnotes.map(function(pn){return Object.assign({},pn);});
+        for(const pn of (e.pnotes||[])){
+          if(Array.isArray(pn.imgs)){pn.imgs=pn.imgs.slice();await hydOne(pn.imgs);}
+          if(pn.img&&typeof pn.img==='object'&&pn.img.__idb){try{const u=await ZMG.media.local.get(pn.img.__idb);if(userDataUrl(u))pn.img=String(u);}catch(e){}}
+        }
+      }
       // 0) 预读图片原始像素（只取宽高，读完立即释放解码位图，降低峰值内存）
       const allImgs=[...new Set([
         ...list.flatMap(e=>(e.imgs||[])),
@@ -7310,6 +7333,8 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
       }
       const perRow=CW>=520?2:1;                            // 每行照片数：4A0/A0 两列，A2/A3 单列
       const photoGap=Math.max(3,Math.round(GAP*0.7));
+      const FTR=Math.max(36,Math.round(PAGE_H_MM*0.049));  // r18 页脚区高度（4A0≈117mm，对齐参考 PDF）
+      let BODY_BOT=M+CH-FTR;                                // r18 正文区下边界（页脚区之上）
       let PH=0;                                            // 单行照片显示高度（mm），由 fit 循环决定
       function photoBlock(urls,draw,x,top,inner){
         let y=top;
@@ -7323,7 +7348,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
           let cx=x+(inner-rowW)/2;
           r.forEach(u=>{
             const w=ratioOf(u)*h;
-            if(draw&&y<=M+CH)placePhoto(u,cx,y,w,h);
+            if(draw&&y<=BODY_BOT)placePhoto(u,cx,y,w,h);
             cx+=w+photoGap;
           });
           y+=h+photoGap;
@@ -7340,7 +7365,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
         const stStr=stTxt(e.status);
         const stW=wStr(stStr,bEm);
         const tl=wrap((i+1)+'. '+makeTitle(e),Math.max(24,inner-stW-2*GAP),tEm);
-        if(draw&&y<=M+CH){
+        if(draw&&y<=BODY_BOT){
           drawLines(tl,x,y,tEm,'#111');
           txt(stStr,M+CW-PAD,y+tEm*0.86,bEm,statusColor(e.status),'right');
         }
@@ -7351,7 +7376,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
         if(e.vendors&&e.vendors.length)tags.push('对接：'+e.vendors.join('、'));
         if(tags.length){
           const l=wrap(tags.join('　'),inner,sEm);
-          if(draw&&y<=M+CH)drawLines(l,x,y,sEm,'#555');
+          if(draw&&y<=BODY_BOT)drawLines(l,x,y,sEm,'#555');
           y+=l.length*sEm*LH;
         }
         y+=tEm*0.35;
@@ -7369,7 +7394,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
           if(draw){
             lines.forEach((ln,k)=>{
               const yy=baseY(y,k,bEm);
-              if(yy>M+CH+4)return;
+              if(yy>BODY_BOT+4)return;
               if(k===0){txt(f[0],x,yy,bEm,'#1d7a5c');txt(ln,x+lw,yy,bEm,'#222');}
               else txt(ln,x,yy,bEm,'#222');
             });
@@ -7382,7 +7407,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
         // 现场记录（文字 + 照片）
         const pns=(e.pnotes||[]).filter(p=>p&&(((p.imgs||[]).length)||p.img||(p.text||'').trim()));
         if(pns.length){
-          if(draw&&y<=M+CH)txt('现场记录（'+pns.length+'）：',x,y+bEm*0.86,bEm,'#1d7a5c');
+          if(draw&&y<=BODY_BOT)txt('现场记录（'+pns.length+'）：',x,y+bEm*0.86,bEm,'#1d7a5c');
           y+=bEm*LH;
           pns.forEach(p=>{
             const ind=bEm*1.1;
@@ -7404,7 +7429,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
         const attsStr=(e.attachments||[]).map(a=>'【'+((a.name.split('.').pop()||'').toUpperCase())+'】'+a.name).join('、');
         if(attsStr){
           const l=wrap('附件：'+attsStr,inner,sEm);
-          if(draw&&y<=M+CH)drawLines(l,x,y,sEm,'#444');
+          if(draw&&y<=BODY_BOT)drawLines(l,x,y,sEm,'#444');
           y+=l.length*sEm*LH;
         }
         return y+PAD-oy;
@@ -7424,18 +7449,18 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
       // 整页排版：draw=false 只算高度；返回内容总高（mm，相对页顶 M）
       function buildPage(draw){
         let y=M;
-        const hEm=em(0.0125,7),subEm=em(0.0042,2.2),fEm=em(0.0042,2.0);
+        const hEm=em(0.0241,7),subEm=em(0.0145,2.2),fEm=em(0.0042,2.0);
         const hl=wrap(title,CW,hEm);
         if(draw)drawLines(hl,M,y,hEm,'#111');
         y+=hl.length*hEm*LH;
         if(draw)txt('发送日期：'+dateStr+'　·　共 '+list.length+' 条待办',M,y+subEm*0.9,subEm,'#666');
         y+=subEm*1.7+GAP*0.5;
-        const ruleH=Math.max(0.8,CW*0.0013);
+        const ruleH=Math.max(0.8,CW*0.0014);
         if(draw){pdf.setFillColor('#1d7a5c');pdf.rect(M,y,CW,ruleH,'F');}
         y+=ruleH+GAP;
         list.forEach((e,i)=>{
           const cardH=itemFlow(e,i,false,0);
-          if(draw&&y<=M+CH){
+          if(draw&&y<=BODY_BOT){
             const r=Math.max(1.5,CW*0.0035);
             pdf.setFillColor('#ffffff');pdf.setDrawColor('#dddddd');pdf.setLineWidth(0.4);
             pdf.roundedRect(M,y,CW,cardH,r,r,'FD');
@@ -7445,11 +7470,12 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
           if(draw)itemFlow(e,i,true,y);
           y+=cardH+GAP;
         });
-        y+=GAP*0.5;
-        if(draw){pdf.setDrawColor('#e5e5e5');pdf.setLineWidth(0.4);pdf.line(M,y,M+CW,y);}
-        y+=GAP*0.7;
-        if(draw&&y<=M+CH)txt('按 照 时 效 提 交 决 策',M+CW/2,y+fEm*0.9,fEm,'#1d7a5c','center');
-        y+=fEm*LH;
+        // r18：页脚独立占位（对齐参考 PDF 页脚条：灰色分隔线 + 居中品牌句）
+        if(draw){
+          const ft=M+CH-FTR;
+          pdf.setDrawColor('#e5e5e5');pdf.setLineWidth(0.4);pdf.line(M,ft,M+CW,ft);
+          txt('按 照 时 效 提 交 决 策',M+CW/2,ft+FTR*0.5+fEm*0.45,fEm,'#1d7a5c','center');
+        }
         return y-M;
       }
       // 2) 自动适配：先算文字总高，剩余高度按「照片行数」均分；仍超页则整体缩小字号（照片像素不变）
@@ -7461,13 +7487,13 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
         const textH=buildPage(false);
         let ph=0;
         if(totalRows>0){
-          const avail=CH-textH;
+          const avail=CH-FTR-textH;
           ph=Math.min(maxPH,Math.max(6,avail/totalRows));
         }
         PH=ph;
         usedH=buildPage(false);
         phH=ph;
-        if(usedH<=CH||totalRows===0)break;
+        if(usedH<=CH-FTR||totalRows===0)break;
       }
       // 3) 正式绘制（单页，所有内容送入这一页）
       PH=phH;
