@@ -1,0 +1,51 @@
+name: ZMG Trial Build
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/zmg-trial.yml'
+      - 'deploy/r20_trial_patch.js'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: zmg-trial
+  cancel-in-progress: true
+jobs:
+  trial:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+      - name: Checkout trial sources
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: _src
+      - name: Build trial.html from r18 index.html
+        run: |
+          set -e
+          node _src/deploy/r20_trial_patch.js index.html trial.html
+          ACTUAL=$(sha256sum trial.html | awk '{print $1}')
+          EXPECTED=$(tr -d '[:space:]' < _src/deploy/r20_trial_expected.txt)
+          echo "actual=$ACTUAL expected=$EXPECTED"
+          test "$ACTUAL" = "$EXPECTED"
+          grep -o "2026.11.06-r20trial" trial.html | head -1
+          touch .nojekyll
+      - name: Commit trial.html to gh-pages
+        run: |
+          set -e
+          git config user.name zmg-bot
+          git config user.email zmg-bot@users.noreply.github.com
+          git add trial.html .nojekyll
+          git commit -m "publish r20trial preview to gh-pages [skip ci]" || true
+          git push origin HEAD:gh-pages
+      - name: Request Pages build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          gh api -X POST repos/${{ github.repository }}/pages/builds -H "Accept: application/vnd.github+json"
+          exit 0
