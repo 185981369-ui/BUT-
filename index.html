@@ -2583,7 +2583,15 @@ const ZMG=(window.ZMG=window.ZMG||{});
       if(opt.body!=null)init.body=(typeof opt.body==='string')?opt.body:JSON.stringify(opt.body);
       let res;
       try{res=await c.fetch(base+path,init,opt.timeout||12000);}
-      catch(e){return {ok:false,code:(e&&e.name==='AbortError')?'TIMEOUT':'NETWORK',message:'网络未连通或超时',status:0};}
+      catch(e){
+        const to=!!(e&&e.name==='AbortError');
+        // r21：服务端 4xx/5xx 若没带 CORS 头，浏览器只会抛「跨域失败」，被误判成手机没网。
+        // 这里用一次 no-cors 探测区分：能拿到 opaque 响应=服务器可达，问题在服务端而不是网络。
+        if(!to){
+          try{await c.fetch(base+path,{method:'POST',mode:'no-cors',cache:'no-store',body:'{"probe":1}'},8000);return {ok:false,code:'SERVER_ERROR',message:'云端服务返回错误（跨域被拦截，通常是服务端异常/欠费/未部署）',status:0};}catch(e2){}
+        }
+        return {ok:false,code:to?'TIMEOUT':'NETWORK',message:'网络未连通或超时',status:0};
+      }
       let data=null;
       try{data=await res.json();}catch(e){data=null;}
       if(res.ok&&data&&data.ok!==false)return Object.assign({ok:true,status:res.status},data);
@@ -3867,7 +3875,6 @@ const ZMG=(window.ZMG=window.ZMG||{});
       +'</div>'
       +'<div id="aeLast" style="font-size:12px;color:#6b7a71;margin-top:8px">—</div>'
       +'<div style="font-size:11.5px;color:#b07b12;background:#fff4e5;border:1px solid #f0c48a;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.6">浏览器只能在页面打开时导出：如果这个月没打开过页面，就不会有新备份。搬运脚本会检测并提醒，而不是静默跳过。</div>');
-    me.appendChild(aeCard);
     const anchor=document.getElementById('privacyCard');
     if(anchor&&anchor.parentNode===sys){
       anchor.insertAdjacentElement('afterend',spaceCard);
@@ -3876,7 +3883,11 @@ const ZMG=(window.ZMG=window.ZMG||{});
       sys.appendChild(spaceCard);
       sys.appendChild(shareCard);
     }
-    bind();
+    // r21：月度备份（海康智存归档）整块从「我的」搬到「系统」，接在已有卡片之后、页脚之前
+    const tail=sys.lastElementChild;
+    if(tail&&tail!==aeCard&&!tail.classList.contains('card')&&!tail.classList.contains('section-head'))sys.insertBefore(aeCard,tail);
+    else sys.appendChild(aeCard);
+    bindAutoDelegation();
   }
 
   function refreshSpace(){
@@ -4236,17 +4247,26 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
   bindShareDelegation();
 
-  function bind(){
-    const sp=(id,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener('click',fn);};
-    const en=document.getElementById('aeEnable');
-    if(en)en.addEventListener('change',function(){c.autoExport.save({enabled:en.checked});refreshAuto();});
-    const day=document.getElementById('aeDay');
-    if(day)day.addEventListener('change',function(){
-      const n=Math.min(28,Math.max(1,parseInt(day.value,10)||1));
-      day.value=String(n);c.autoExport.save({day:n});refreshAuto();
-      toastOk('设为每月 '+n+' 号起自动导出。');
-    });
-    sp('aeNow',async function(){const st=await c.exportData();if(st)refreshAuto();});
+  // r21：月度备份卡片搬到「系统」页后，改用 document 级委托，避免直接绑定的监听随 DOM 失效
+  function bindAutoDelegation(){
+    if(bindAutoDelegation.done)return;
+    bindAutoDelegation.done=true;
+    document.addEventListener('change',function(ev){
+      const t=ev.target;
+      if(!t||!t.id)return;
+      if(t.id==='aeEnable'){c.autoExport.save({enabled:!!t.checked});refreshAuto();return;}
+      if(t.id==='aeDay'){
+        const n=Math.min(28,Math.max(1,parseInt(t.value,10)||1));
+        t.value=String(n);c.autoExport.save({day:n});refreshAuto();
+        toastOk('设为每月 '+n+' 号起自动导出。');
+      }
+    },true);
+    document.addEventListener('click',function(ev){
+      const t=ev.target&&ev.target.closest?ev.target.closest('#aeNow'):null;
+      if(!t||t.disabled)return;
+      ev.preventDefault();
+      Promise.resolve(c.exportData()).then(function(st){if(st)refreshAuto();}).catch(function(){});
+    },true);
   }
 
   // 任务E：首次备份引导（只弹一次；说明「自动导出 + 定时任务搬去 NAS」）
@@ -4283,7 +4303,7 @@ const ZMG=(window.ZMG=window.ZMG||{});
   }
 
   // ------------------------------------------------ 版本自证 + 访客/主人分流护栏
-  const BUILD={v:'2026.11.06-r18',at:'2026-11-06 12:00',tag:'r18'};
+  const BUILD={v:'2026.11.06-r21',at:'2026-11-06 18:40',tag:'r21'};
   try{window.ZMG_BUILD=BUILD;}catch(e){}
 
   function bootOwner(){
@@ -5434,6 +5454,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
     const code=String((r&&r.code)||'').toUpperCase();
     const msg=String((r&&r.message)||'');
     if(code==='NO_API_BASE')return '未配置私有后端地址：请先在「数据与隐私」填写地址并选择「私有后端」。';
+    if(code==='SERVER_ERROR')return '云端服务暂时不可用：服务器返回错误（常见于服务欠费/未部署/跨域被拦），不是手机网络问题；请联系管理员恢复服务后再试。';
     if(code==='NETWORK'||code==='TIMEOUT')return '网络不通：请检查手机网络后重试。';
     if(/INVALID|RECOVERY|NOT_FOUND|BAD_CODE/.test(code)||/恢复码/.test(msg))return '恢复码无效：请核对 32 位字符（空格与连字符会自动忽略）。';
     if(/EXPIRED|REVOKED/.test(code)||/过期|撤销/.test(msg))return '空间已过期或被撤销：请向账本主人索取新的恢复码。';
@@ -5641,6 +5662,17 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
   function getCurProj(){const a=loadProjects();const i=getCurIdx();return i>=0?a[i]:null;}
   function projTag(){const p=getCurProj();const n=p?(p.comm||p.unit):'';return n?'【'+n+'】':'';}
   function projFilePre(){const t=projTag();return t?t.replace(/[【】]/g,'')+'-':'';}
+  // r21：导出文件名统一生成 —— 项目名只出现一次、日期补零、扩展名强制 .pdf
+  function projNameOnce(){
+    const n=String(projTag()||'').replace(/[【】\s]/g,'');
+    if(n&&n.length%2===0){const h=n.slice(0,n.length/2);if(h+h===n)return h;}
+    return n;
+  }
+  function pad2(x){return (x<10?'0':'')+x;}
+  function pdfDefaultName(mid){
+    const d=new Date();
+    return projNameOnce()+(mid||'待办交底')+'-'+d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+'.pdf';
+  }
   function projShort(p){return ZMG.projects.name(p);}
   function renderTopSub(){
     const el=document.getElementById('topSub');
@@ -6094,6 +6126,7 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
   // 文件名安全化：保留中文，剥离路径/扩展名敏感字符（【】/:*?"<>|\ 等），PDF 强制 .pdf
   function safeFileName(name,mime){
     let n=String(name==null?'':name).replace(/[【】\[\]{}<>:"/\\|?*\u0000-\u001f]/g,'').replace(/\s+/g,' ').trim();
+    n=n.replace(/[.\s]+$/,'');
     if(!n)n='文件';
     if((mime||'').indexOf('pdf')>=0&&!/\.pdf$/i.test(n))n+='.pdf';
     if(/\.pdf$/i.test(n)&&n.replace(/\.pdf$/i,'').replace(/[_\-\s]/g,'')==='')n='文件.pdf';
@@ -7165,7 +7198,10 @@ try{ZMG.projects.compact();}catch(e){try{console.warn('[projects.compact]',e);}c
     const dateStr=now.getFullYear()+'年'+(now.getMonth()+1)+'月'+now.getDate()+'日';
     const title=customName||(projTag()+'【'+label+'】本阶段待办统计 · '+dateStr);
     // 新文件按标题命名（去除文件系统非法字符）；附件一律保持原名
-    const fname=(customName||title).replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,' ')+'.pdf';
+    // r21：去掉结尾的 .pdf/点/空格后强制补且只补一次 .pdf，避免「无后缀」或「.pdf.pdf」
+    const _raw=String(customName||title).replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+    const _base=_raw.replace(/\.pdf$/i,'').replace(/[.\s]+$/,'');
+    const fname=(_base||'待办交底')+'.pdf';
     // 收集本批次唯一附件（原名不改）
     const attSet={};
     list.forEach(e=>(e.attachments||[]).forEach(a=>{if(!attSet[a.name])attSet[a.name]=a;}));
@@ -8111,7 +8147,7 @@ render();
       if(picked.size){
         // 弹自定义命名 → 生成所选 PDF → 发送面板
         const now=new Date();
-        const defName=projTag().replace(/[【】\s]/g,'')+'待办交底-'+now.getFullYear()+'-'+(now.getMonth()+1)+'-'+now.getDate();
+        const defName=pdfDefaultName('待办交底');
         const ov=document.createElement('div');ov.className='vd-overlay';
         ov.innerHTML=`<div class="vd-card">
           <div class="vd-head"><div class="vd-title">命名文件并发送（${picked.size} 条）</div><button type="button" class="vd-close" aria-label="关闭">×</button></div>
@@ -8133,7 +8169,9 @@ render();
           const list=ENTRIES.filter((e,ri)=>picked.has(ri));
           exitPick();
           if(!list.length){toast('请先勾选待办条目。');return;}
-          exportSendPdf(name,list);
+          // r21：自定义文件名必须走第 3 个参数 customName，否则会被当作档位标签拼进标题，
+          // 导致项目名重复、日期重复、文件名里夹一个 .pdf（这正是不带后缀文件的来源）
+          exportSendPdf('待办交底',list,name);
         });
         return;
       }
